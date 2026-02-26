@@ -9,7 +9,12 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.2.0` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.2.1` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.2.1 新增
+
+- 全新现代化的 Fluent Design 控制面板 UI（基于 `sv_ttk`）。
+- 控制面板的设置项更加清晰易懂，进行了卡片化的中文排版。
 
 ## v0.2.0 新增
 
@@ -130,7 +135,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.2.0`
+- 当前版本：`v0.2.1`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`

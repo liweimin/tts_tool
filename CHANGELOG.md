@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-02-27
+
+### Changed
+- Modernized the control panel UI with the `sv_ttk` Fluent Design dark theme.
+- Grouped settings into logically separated cards with localized Chinese labels.
+- Fixed UI layout to ensure action buttons are always visible at the bottom.
+
 ## [0.2.0] - 2026-02-26
 
 ### Added
