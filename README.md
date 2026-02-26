@@ -9,9 +9,9 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.3.5` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.3.6` 推荐下载资产：`tts-reader-uia.exe`
 
-## v0.3.5 新增 (极限瘦身版)
+## v0.3.6 新增 (极限瘦身版)
 - **体积压缩**：将 PyInstaller 打包环境做了极限精简，并且应用了核心组件的 UPX 无损压缩技术。单体免安装包最终大小暴跌至 **不到13MB**。
 - 解决了一些可能存在的进程残留依赖问题。
 
@@ -146,7 +146,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.3.5`
+- 当前版本：`v0.3.6`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`

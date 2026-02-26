@@ -4,6 +4,7 @@ from PyInstaller.utils.hooks import collect_all
 import os
 import uiautomation
 
+datas = []
 uia_bin_dir = os.path.join(os.path.dirname(uiautomation.__file__), 'bin')
 binaries = [
     (os.path.join(uia_bin_dir, 'UIAutomationClient_VC140_X64.dll'), 'uiautomation\\bin'),
