@@ -4,10 +4,11 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-## [0.3.6] - 2026-02-27
+## [0.3.7] - 2026-02-27
 
 ### Changed
-- **Packaging**: Applied aggressive PyInstaller excludes (abandoned dozens of unused Python stdlibs) and deployed UPX binary compression. The single executable size plummeted from the initial ~100MB to an ultimate ~12.5MB.
+- **Packaging Stability**: Reverted overly aggressive Python standard library exclusions that were causing PyInstaller `zipfile`/`urllib` hook missing module exceptions at startup.
+- **Packaging**: Applied safe PyInstaller excludes (abandoned `numpy`) and deployed UPX binary compression. The single executable size plummeted from the initial ~100MB to an ultimate ~16MB.
 
 ## [0.3.0] - 2026-02-27
 

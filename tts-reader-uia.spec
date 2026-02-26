@@ -24,7 +24,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['email', 'xml', 'html', 'http', 'unittest', 'urllib', 'numpy', 'sqlite3', 'ssl', '_ssl', 'hashlib', 'multiprocessing', 'bz2', 'lzma', 'csv', 'tarfile', 'zipfile', 'optparse', 'argparse', 'calendar', 'datetime', 'doctest', 'difflib', 'pydoc', 'socket', 'ftplib', 'poplib', 'imaplib', 'nntplib', 'smtplib', 'telnetlib', 'xmlrpc', 'logging.handlers', 'tty', 'pty', 'distutils', 'venv', 'site', 'pkg_resources', 'pydoc_data', 'pip'],
+    excludes=['numpy'],
     noarchive=False,
     optimize=0,
 )
