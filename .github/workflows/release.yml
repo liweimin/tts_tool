@@ -28,33 +28,19 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller uiautomation
 
+      - name: Download UPX
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri 'https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip' -OutFile 'upx.zip'
+          Expand-Archive -Path 'upx.zip' -DestinationPath '.'
+          Copy-Item -Path 'upx-4.2.4-win64\upx.exe' -Destination 'upx.exe'
+          Remove-Item 'upx.zip'
+          Remove-Item -Recurse -Force 'upx-4.2.4-win64'
+
       - name: Build UIA EXE
         shell: pwsh
         run: |
-          $uiaBin = @'
-          import pathlib
-          import uiautomation
-          print(pathlib.Path(uiautomation.__file__).resolve().parent / "bin")
-          '@ | python -
-          $uiaBin = $uiaBin.Trim()
-
-          $uiaX64 = Join-Path $uiaBin "UIAutomationClient_VC140_X64.dll"
-          $uiaX86 = Join-Path $uiaBin "UIAutomationClient_VC140_X86.dll"
-          if (-not (Test-Path $uiaX64) -or -not (Test-Path $uiaX86)) {
-            throw "UI Automation DLLs not found in $uiaBin"
-          }
-
-          python -m PyInstaller `
-            --noconfirm `
-            --onefile `
-            --windowed `
-            --name tts-reader-uia `
-            --hidden-import uiautomation `
-            --collect-all uiautomation `
-            --collect-all rapidocr_onnxruntime `
-            --add-binary "$uiaX64;uiautomation\bin" `
-            --add-binary "$uiaX86;uiautomation\bin" `
-            src\main.py
+          pyinstaller --clean --noconfirm --upx-dir=. tts-reader-uia.spec
 
       - name: Generate SHA256
         shell: pwsh
