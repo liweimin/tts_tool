@@ -1,0 +1,4 @@
+pywin32>=306
+pyttsx3>=2.90
+pystray>=0.19.5
+Pillow>=10.0.0

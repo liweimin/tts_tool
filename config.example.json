@@ -1,0 +1,9 @@
+{
+  "hotkey": "alt+q",
+  "copy_delay_ms": 260,
+  "copy_retry_count": 2,
+  "max_chars": 4000,
+  "tts_rate": 180,
+  "tts_voice_contains": "",
+  "skip_if_no_text": false
+}
