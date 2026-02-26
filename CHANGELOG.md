@@ -4,6 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-27
+
+### Added
+- Added a custom Tkinter transparent full-screen overlay for instant mouse-drag area selection.
+- Added a subtle "ding" notification sound immediately upon screen capture release.
+
+### Changed
+- **Major**: Replaced `rapidocr-onnxruntime` with native `Windows.Media.Ocr` API via `winrt`. OCR is now instantaneously executed directly by the OS.
+- **Major**: Executable packaging size was drastically reduced from ~60MB-100MB to ~20MB by stripping heavy ML model dependencies.
+- Screen capturing entirely bypasses the system clipboard now, resolving previous data pollution and improving privacy and performance.
+
 ## [0.2.1] - 2026-02-27
 
 ### Changed

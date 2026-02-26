@@ -9,7 +9,14 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.2.1` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.3.0` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.3.0 新增（核心重构大版本）
+
+- **极致轻量化**：移除了内置的 AI 模型库（`rapidocr` 与 `numpy`），直接调用 Windows 10/11 底层原生 OCR 接口。安装包体积从近百兆暴跌至 **约 20MB**。
+- **全速秒出声**：抛弃了笨重的系统截图框。自研纯净内存级屏摄蒙层。按下快捷键后，彻底告别几秒钟的停顿感，鼠标送开瞬间立即发声。
+- **剪贴板保护**：全新的截图读取逻辑全程在内存流转，不再写入和占用你的系统剪贴板（不再干扰 `Win+V` 的历史记录）。
+- **微交互体验**：框选完毕后增加了一次清脆的“叮”提示音效，增强感知。
 
 ## v0.2.1 新增
 
@@ -29,10 +36,10 @@ Win10/Win11 桌面常驻工具。
 - 取词策略：
   - 优先 `UI Automation`（若已安装 `uiautomation`）
   - 失败后自动退化到剪贴板复制链路（`WM_COPY` / `Ctrl+C` / `Ctrl+Insert`，并尽量恢复原剪贴板）
-- 截图朗读策略：
-  - 调用 Windows 系统截图 UI（`ms-screenclip:`）
-  - 从剪贴板读取截图图像进行 OCR（`rapidocr-onnxruntime`，中英混合）
-  - OCR 只读取剪贴板，不清空、不覆盖截图数据
+- 截图朗读策略（`v0.3.0` 重构）：
+  - 调用程序自绘的全屏极速透明遮罩，取代笨重缓慢的系统自带截图。
+  - 获取的选区图像直接在内存中转化为二进制缓冲区，通过 `winrt` 底层接口传给 `Windows.Media.Ocr`。
+  - 全程不再读写剪贴板，彻底保护用户原始数据和隐私，实现几毫秒级的截图到发声转换。
 
 如需额外启用 UIA 取词能力：
 
@@ -135,7 +142,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.2.1`
+- 当前版本：`v0.3.0`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`
@@ -146,5 +153,3 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 - PDF 若是扫描图片不可复制文本，需要额外 OCR 才能完整支持。
 - 若使用 `Alt+Q` 偶发取词失败，建议改成 `Ctrl+Alt+Q`。
 - 在复杂网页（自定义前端控件）里，偶发会出现“未获取到选中文本”；当前已做 UIA + 剪贴板兜底与重试，若仍复现请在 `Logs` 页面复制日志反馈。
-- 截图朗读在首次 OCR 时可能有模型初始化开销，后续会更快。
-- 程序不会额外保存截图文件；默认只使用系统剪贴板当前项。若你开启了 Windows 剪贴板历史（`Win+V`），历史条目由系统管理。
