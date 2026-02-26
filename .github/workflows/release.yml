@@ -51,6 +51,7 @@ jobs:
             --name tts-reader-uia `
             --hidden-import uiautomation `
             --collect-all uiautomation `
+            --collect-all rapidocr_onnxruntime `
             --add-binary "$uiaX64;uiautomation\bin" `
             --add-binary "$uiaX86;uiautomation\bin" `
             src\main.py
@@ -61,9 +62,44 @@ jobs:
           $hash = (Get-FileHash dist\tts-reader-uia.exe -Algorithm SHA256).Hash.ToLower()
           "$hash  tts-reader-uia.exe" | Out-File dist\SHA256SUMS.txt -Encoding ascii
 
+      - name: Prepare Release Notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag.TrimStart("v")
+          $lines = Get-Content CHANGELOG.md
+          $start = $null
+          $versionPattern = [regex]::Escape("## [$version]")
+          for ($i = 0; $i -lt $lines.Length; $i++) {
+            if ($lines[$i] -match "^$versionPattern") {
+              $start = $i
+              break
+            }
+          }
+
+          if ($null -eq $start) {
+            "Release $tag`n`nSee CHANGELOG.md for details." | Out-File dist\release_notes.md -Encoding utf8
+            return
+          }
+
+          $end = $lines.Length
+          for ($j = $start + 1; $j -lt $lines.Length; $j++) {
+            if ($lines[$j] -match "^## ") {
+              $end = $j
+              break
+            }
+          }
+
+          $picked = $lines[$start..($end - 1)]
+          $header = "# $tag`n"
+          $header | Out-File dist\release_notes.md -Encoding utf8
+          $picked | Out-File dist\release_notes.md -Encoding utf8 -Append
+
       - name: Publish Release Assets
         uses: softprops/action-gh-release@v2
         with:
+          body_path: dist/release_notes.md
+          append_body: true
           generate_release_notes: true
           files: |
             dist/tts-reader-uia.exe

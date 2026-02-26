@@ -39,6 +39,7 @@ _VK_MAP = {
 @dataclass(frozen=True)
 class AppConfig:
     hotkey: str = "alt+q"
+    screenshot_hotkey: str = "alt+r"
     copy_delay_ms: int = 260
     copy_retry_count: int = 2
     max_chars: int = 4000
@@ -66,14 +67,18 @@ def _parse_hotkey(hotkey: str) -> tuple[int, int]:
 
 def read_config(config_path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     if not config_path.exists():
-        return AppConfig()
+        config = AppConfig()
+        validate_config(config)
+        return config
 
     raw = json.loads(config_path.read_text(encoding="utf-8"))
     data: dict[str, Any] = {}
     for field_name in AppConfig.__dataclass_fields__.keys():
         if field_name in raw:
             data[field_name] = raw[field_name]
-    return AppConfig(**data)
+    config = AppConfig(**data)
+    validate_config(config)
+    return config
 
 
 def write_default_config_if_missing(config_path: Path = DEFAULT_CONFIG_PATH) -> None:
@@ -98,3 +103,10 @@ def parse_hotkey(hotkey: str) -> tuple[int, int]:
 
 def hotkey_to_modifiers_and_vk(config: AppConfig) -> tuple[int, int]:
     return _parse_hotkey(config.hotkey)
+
+
+def validate_config(config: AppConfig) -> None:
+    _parse_hotkey(config.hotkey)
+    _parse_hotkey(config.screenshot_hotkey)
+    if config.hotkey.strip().lower() == config.screenshot_hotkey.strip().lower():
+        raise ValueError("Text hotkey and screenshot hotkey cannot be the same.")

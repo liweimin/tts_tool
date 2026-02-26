@@ -22,7 +22,7 @@ def _run():
     except Exception as exc:
         status["error"] = repr(exc)
 
-app = ReaderApp(AppConfig(hotkey="ctrl+shift+f12"))
+app = ReaderApp(AppConfig(hotkey="ctrl+shift+f12", screenshot_hotkey="ctrl+shift+f11"))
 thread = threading.Thread(target=_run, daemon=True)
 thread.start()
 time.sleep(3)

@@ -33,8 +33,9 @@ def main() -> int:
     write_default_config_if_missing()
     config = read_config()
     logger.info(
-        "Loaded config: hotkey=%s max_chars=%s copy_delay_ms=%s copy_retry_count=%s",
+        "Loaded config: hotkey=%s screenshot_hotkey=%s max_chars=%s copy_delay_ms=%s copy_retry_count=%s",
         config.hotkey,
+        config.screenshot_hotkey,
         config.max_chars,
         config.copy_delay_ms,
         config.copy_retry_count,

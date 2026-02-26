@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+## [0.2.0] - 2026-02-26
+
+### Added
+- Screenshot OCR reading flow with default hotkey `Alt+R`.
+- Tray shortcut `Screenshot OCR`.
+- Config field `screenshot_hotkey` with conflict validation.
+- Request preemption for screenshot OCR: stale screenshot requests are aborted when a newer request arrives.
+
+### Changed
+- Settings UI now supports independent text and screenshot hotkeys.
+- Build/release scripts now bundle `rapidocr-onnxruntime` for screenshot OCR.
+- Hotkey callback dispatch is now asynchronous to avoid blocking subsequent triggers.
+- Speech interruption logic was hardened to reliably stop current playback before new playback.
+- Logging policy now keeps only recent logs (`app.log` and `app.log.1`).
+
 ## [0.1.0] - 2026-02-26
 
 ### Added

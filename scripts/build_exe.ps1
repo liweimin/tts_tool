@@ -8,9 +8,9 @@ if (-not (Test-Path $python)) {
 # Avoid file lock failures during rebuild.
 Get-Process | Where-Object { $_.ProcessName -eq "tts-reader" } | Stop-Process -Force -ErrorAction SilentlyContinue
 
-& $python -m pip install pyinstaller
+& $python -m pip install pyinstaller rapidocr-onnxruntime
 if ($LASTEXITCODE -ne 0) {
-  throw "Failed to install pyinstaller."
+  throw "Failed to install build dependencies."
 }
 
 & $python -m PyInstaller `
@@ -18,6 +18,7 @@ if ($LASTEXITCODE -ne 0) {
   --onefile `
   --windowed `
   --name tts-reader `
+  --collect-all rapidocr_onnxruntime `
   src\main.py
 
 if ($LASTEXITCODE -ne 0) {

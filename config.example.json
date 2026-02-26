@@ -1,5 +1,6 @@
 {
   "hotkey": "alt+q",
+  "screenshot_hotkey": "alt+r",
   "copy_delay_ms": 260,
   "copy_retry_count": 2,
   "max_chars": 4000,

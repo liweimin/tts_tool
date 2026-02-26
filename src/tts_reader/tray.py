@@ -11,11 +11,13 @@ class TrayIcon:
     def __init__(
         self,
         on_replay: Callable[[], None],
+        on_read_screenshot: Callable[[], None],
         on_settings: Callable[[], None],
         on_logs: Callable[[], None],
         on_exit: Callable[[], None],
     ) -> None:
         self._on_replay = on_replay
+        self._on_read_screenshot = on_read_screenshot
         self._on_settings = on_settings
         self._on_logs = on_logs
         self._on_exit = on_exit
@@ -38,6 +40,7 @@ class TrayIcon:
         image = _build_icon_image()
         menu = pystray.Menu(
             pystray.MenuItem("Read Again", lambda _icon, _item: self._on_replay()),
+            pystray.MenuItem("Screenshot OCR", lambda _icon, _item: self._on_read_screenshot()),
             pystray.MenuItem("Settings", lambda _icon, _item: self._on_settings()),
             pystray.MenuItem("Logs", lambda _icon, _item: self._on_logs()),
             pystray.MenuItem("Exit", lambda _icon, _item: self._on_exit()),

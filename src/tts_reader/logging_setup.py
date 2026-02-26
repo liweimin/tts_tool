@@ -23,10 +23,11 @@ def setup_logging(log_dir: Path | None = None) -> Path:
     root.setLevel(logging.INFO)
     root.handlers.clear()
 
+    _trim_old_log_backups(log_file, keep_backups=1)
     file_handler = RotatingFileHandler(
         log_file,
-        maxBytes=2 * 1024 * 1024,
-        backupCount=3,
+        maxBytes=1024 * 1024,
+        backupCount=1,
         encoding="utf-8",
     )
     file_handler.setFormatter(formatter)
@@ -37,3 +38,19 @@ def setup_logging(log_dir: Path | None = None) -> Path:
     root.addHandler(file_handler)
     root.addHandler(console_handler)
     return log_file
+
+
+def _trim_old_log_backups(log_file: Path, keep_backups: int) -> None:
+    # Keep only app.log and the newest N rotated files (app.log.1, ...).
+    backup_paths: list[Path] = []
+    for candidate in log_file.parent.glob(f"{log_file.name}.*"):
+        suffix = candidate.name.replace(f"{log_file.name}.", "")
+        if suffix.isdigit():
+            backup_paths.append(candidate)
+    backup_paths.sort(key=lambda p: int(p.name.split(".")[-1]))
+    to_remove = backup_paths[keep_backups:]
+    for path in to_remove:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass

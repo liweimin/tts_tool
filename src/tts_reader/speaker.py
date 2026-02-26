@@ -23,6 +23,7 @@ class Speaker:
         self._pending_text: str | None = None
         self._pending_rate: int | None = None
         self._pending_voice_contains: str | None = None
+        self._interrupt_only = False
         self._is_speaking = False
         self._default_voice_id: str | None = None
         self._startup_error: Exception | None = None
@@ -41,8 +42,16 @@ class Speaker:
             return
         with self._state_lock:
             self._pending_text = text
+            self._interrupt_only = False
         self._request_event.set()
         _LOGGER.info("Speech request received: %s chars.", len(text))
+
+    def interrupt(self) -> None:
+        with self._state_lock:
+            self._pending_text = None
+            self._interrupt_only = True
+        self._request_event.set()
+        _LOGGER.info("Speech interrupt requested.")
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -104,20 +113,30 @@ class Speaker:
         self._request_event.clear()
         with self._state_lock:
             text = self._pending_text
+            interrupt_only = self._interrupt_only
             self._pending_text = None
+            self._interrupt_only = False
+        if interrupt_only:
+            self._force_stop(engine, "explicit interrupt request")
         if not text:
             return
         try:
-            if self._is_speaking:
-                _LOGGER.info("Interrupting current speech for a newer selection.")
-                engine.stop()
-                # Let SAPI dispatch stop events before enqueuing next utterance.
-                for _ in range(3):
-                    engine.iterate()
-                    time.sleep(0.005)
+            # Always stop before enqueuing new speech to avoid race on _is_speaking flag.
+            self._force_stop(engine, "new speech request")
             engine.say(text)
         except Exception:
             _LOGGER.exception("Failed to enqueue speech request.")
+
+    def _force_stop(self, engine: pyttsx3.Engine, reason: str) -> None:
+        _LOGGER.info("Interrupting current speech due to %s.", reason)
+        try:
+            engine.stop()
+            # Let SAPI dispatch stop events before handling next command.
+            for _ in range(3):
+                engine.iterate()
+                time.sleep(0.005)
+        except Exception:
+            _LOGGER.debug("engine.stop() failed during %s.", reason, exc_info=True)
 
     def _apply_pending_settings(self, engine: pyttsx3.Engine) -> None:
         with self._state_lock:

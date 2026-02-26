@@ -28,10 +28,16 @@ class GlobalHotkeyListener:
         self._thread: threading.Thread | None = None
         self._thread_id: int | None = None
         self._startup_error: Exception | None = None
+        self._callback_seq = 0
+        self._callback_lock = threading.Lock()
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
             return
+        self._stop_event.clear()
+        self._ready_event.clear()
+        self._startup_error = None
+        self._thread_id = None
         self._thread = threading.Thread(target=self._run, name="hotkey-listener", daemon=True)
         self._thread.start()
         self._ready_event.wait(timeout=3.0)
@@ -44,6 +50,8 @@ class GlobalHotkeyListener:
             _USER32.PostThreadMessageW(self._thread_id, _WM_QUIT, 0, 0)
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
+        self._thread = None
+        self._thread_id = None
 
     def _run(self) -> None:
         self._thread_id = _KERNEL32.GetCurrentThreadId()
@@ -57,7 +65,7 @@ class GlobalHotkeyListener:
             self._ready_event.set()
             return
 
-        _LOGGER.info("Global hotkey registered.")
+        _LOGGER.info("Global hotkey registered (modifiers=%s, vk=%s).", self._modifiers, self._vk)
         self._ready_event.set()
         msg = wintypes.MSG()
         while not self._stop_event.is_set():
@@ -68,13 +76,27 @@ class GlobalHotkeyListener:
                 _LOGGER.exception("GetMessageW failed in hotkey loop.")
                 break
             if msg.message == _WM_HOTKEY and msg.wParam == _HOTKEY_ID:
-                try:
-                    self._on_trigger()
-                except Exception:
-                    _LOGGER.exception("Unhandled error in hotkey callback.")
+                self._dispatch_callback()
 
         _USER32.UnregisterHotKey(None, _HOTKEY_ID)
-        _LOGGER.info("Global hotkey unregistered.")
+        _LOGGER.info("Global hotkey unregistered (modifiers=%s, vk=%s).", self._modifiers, self._vk)
+
+    def _dispatch_callback(self) -> None:
+        with self._callback_lock:
+            self._callback_seq += 1
+            callback_id = self._callback_seq
+        threading.Thread(
+            target=self._safe_run_callback,
+            args=(callback_id,),
+            name=f"hotkey-callback-{callback_id}",
+            daemon=True,
+        ).start()
+
+    def _safe_run_callback(self, callback_id: int) -> None:
+        try:
+            self._on_trigger()
+        except Exception:
+            _LOGGER.exception("Unhandled error in hotkey callback id=%s.", callback_id)
 
 
 def is_hotkey_available(modifiers: int, vk: int) -> bool:

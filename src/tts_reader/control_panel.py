@@ -6,7 +6,7 @@ from tkinter import messagebox
 from tkinter import ttk
 from typing import Callable
 
-from .config import AppConfig, read_config, write_config, parse_hotkey
+from .config import AppConfig, read_config, write_config, parse_hotkey, validate_config
 from .hotkey import is_hotkey_available
 
 
@@ -30,6 +30,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     notebook.add(logs_tab, text="Logs")
 
     hotkey_var = tk.StringVar(root)
+    screenshot_hotkey_var = tk.StringVar(root)
     copy_delay_var = tk.StringVar(root)
     copy_retry_var = tk.StringVar(root)
     max_chars_var = tk.StringVar(root)
@@ -47,6 +48,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     def load_config_to_form() -> None:
         config = read_config(config_path)
         hotkey_var.set(config.hotkey)
+        screenshot_hotkey_var.set(config.screenshot_hotkey)
         copy_delay_var.set(str(config.copy_delay_ms))
         copy_retry_var.set(str(config.copy_retry_count))
         max_chars_var.set(str(config.max_chars))
@@ -68,17 +70,22 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
 
     def collect_config_from_form() -> AppConfig:
         hotkey = hotkey_var.get().strip().lower()
+        screenshot_hotkey = screenshot_hotkey_var.get().strip().lower()
         if not hotkey:
-            raise ValueError("Hotkey cannot be empty.")
+            raise ValueError("Text hotkey cannot be empty.")
+        if not screenshot_hotkey:
+            raise ValueError("Screenshot hotkey cannot be empty.")
         parse_hotkey(hotkey)
+        parse_hotkey(screenshot_hotkey)
 
         copy_delay_ms = parse_int(copy_delay_var.get(), "Copy Delay (ms)", minimum=80)
         copy_retry_count = parse_int(copy_retry_var.get(), "Copy Retry Count", minimum=1, maximum=6)
         max_chars = parse_int(max_chars_var.get(), "Max Chars", minimum=10)
         tts_rate = parse_int(tts_rate_var.get(), "TTS Rate", minimum=60, maximum=400)
 
-        return AppConfig(
+        config = AppConfig(
             hotkey=hotkey,
+            screenshot_hotkey=screenshot_hotkey,
             copy_delay_ms=copy_delay_ms,
             copy_retry_count=copy_retry_count,
             max_chars=max_chars,
@@ -86,6 +93,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
             tts_voice_contains=tts_voice_var.get().strip(),
             skip_if_no_text=bool(skip_empty_var.get()),
         )
+        validate_config(config)
+        return config
 
     def on_apply() -> None:
         try:
@@ -95,15 +104,16 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
             return
 
         current = read_config(config_path)
-        if config.hotkey.strip().lower() != current.hotkey.strip().lower():
-            modifiers, vk = parse_hotkey(config.hotkey)
-            if not is_hotkey_available(modifiers, vk):
-                messagebox.showwarning(
-                    "Hotkey Conflict",
-                    "快捷键已被系统或其它软件占用，请换一个组合。",
-                )
-                set_status("Hotkey conflict detected.", is_error=True)
-                return
+        if _has_hotkey_conflict(
+            current=current,
+            new_config=config,
+        ):
+            messagebox.showwarning(
+                "Hotkey Conflict",
+                "快捷键已被系统或其它软件占用，请换一个组合。",
+            )
+            set_status("Hotkey conflict detected.", is_error=True)
+            return
 
         write_config(config, config_path)
         set_status("配置已保存，主程序会自动生效。")
@@ -132,6 +142,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     _build_settings_tab(
         settings_tab=settings_tab,
         hotkey_var=hotkey_var,
+        screenshot_hotkey_var=screenshot_hotkey_var,
         copy_delay_var=copy_delay_var,
         copy_retry_var=copy_retry_var,
         max_chars_var=max_chars_var,
@@ -160,6 +171,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
 def _build_settings_tab(
     settings_tab: ttk.Frame,
     hotkey_var: tk.StringVar,
+    screenshot_hotkey_var: tk.StringVar,
     copy_delay_var: tk.StringVar,
     copy_retry_var: tk.StringVar,
     max_chars_var: tk.StringVar,
@@ -174,26 +186,27 @@ def _build_settings_tab(
     container.pack(fill=tk.BOTH, expand=True)
     container.columnconfigure(1, weight=1)
 
-    _add_labeled_entry(container, 0, "Hotkey", hotkey_var)
-    _add_labeled_entry(container, 1, "Copy Delay (ms)", copy_delay_var)
-    _add_labeled_entry(container, 2, "Copy Retry Count", copy_retry_var)
-    _add_labeled_entry(container, 3, "Max Chars", max_chars_var)
-    _add_labeled_entry(container, 4, "TTS Rate", tts_rate_var)
-    _add_labeled_entry(container, 5, "Voice Contains", tts_voice_var)
+    _add_labeled_entry(container, 0, "Text Hotkey", hotkey_var)
+    _add_labeled_entry(container, 1, "Screenshot Hotkey", screenshot_hotkey_var)
+    _add_labeled_entry(container, 2, "Copy Delay (ms)", copy_delay_var)
+    _add_labeled_entry(container, 3, "Copy Retry Count", copy_retry_var)
+    _add_labeled_entry(container, 4, "Max Chars", max_chars_var)
+    _add_labeled_entry(container, 5, "TTS Rate", tts_rate_var)
+    _add_labeled_entry(container, 6, "Voice Contains", tts_voice_var)
 
     ttk.Checkbutton(
         container,
         text="Skip voice hint when no selected text",
         variable=skip_empty_var,
-    ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(8, 4))
+    ).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(8, 4))
 
     button_row = ttk.Frame(container)
-    button_row.grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(14, 4))
+    button_row.grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=(14, 4))
     ttk.Button(button_row, text="Reload", command=on_reload).pack(side=tk.LEFT, padx=(0, 8))
     ttk.Button(button_row, text="Save && Apply", command=on_apply).pack(side=tk.LEFT)
 
     status = ttk.Label(container, textvariable=status_var, style="Status.TLabel")
-    status.grid(row=8, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
+    status.grid(row=9, column=0, columnspan=2, sticky=tk.W, pady=(12, 0))
 
 
 def _build_logs_tab(
@@ -246,3 +259,30 @@ def read_log_tail(log_path: Path, max_lines: int = 500) -> str:
     except Exception as exc:
         return f"Failed to read logs: {exc}"
     return "\n".join(lines[-max_lines:])
+
+
+def _has_hotkey_conflict(current: AppConfig, new_config: AppConfig) -> bool:
+    current_text = current.hotkey.strip().lower()
+    current_screenshot = current.screenshot_hotkey.strip().lower()
+    new_text = new_config.hotkey.strip().lower()
+    new_screenshot = new_config.screenshot_hotkey.strip().lower()
+
+    releasing = set()
+    if new_text != current_text:
+        releasing.add(current_text)
+    if new_screenshot != current_screenshot:
+        releasing.add(current_screenshot)
+
+    changed_candidates: list[str] = []
+    if new_text != current_text:
+        changed_candidates.append(new_text)
+    if new_screenshot != current_screenshot:
+        changed_candidates.append(new_screenshot)
+
+    for hotkey in changed_candidates:
+        if hotkey in releasing:
+            continue
+        modifiers, vk = parse_hotkey(hotkey)
+        if not is_hotkey_available(modifiers, vk):
+            return True
+    return False
