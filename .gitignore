@@ -6,3 +6,6 @@ dist/
 *.spec
 logs/
 config.json
+upx.exe
+upx.zip
+upx-*/

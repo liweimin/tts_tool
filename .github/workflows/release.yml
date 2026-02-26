@@ -32,9 +32,9 @@ jobs:
         shell: pwsh
         run: |
           Invoke-WebRequest -Uri 'https://github.com/upx/upx/releases/download/v4.2.4/upx-4.2.4-win64.zip' -OutFile 'upx.zip'
-          Expand-Archive -Path 'upx.zip' -DestinationPath '.'
-          Copy-Item -Path 'upx-4.2.4-win64\upx.exe' -Destination 'upx.exe'
-          Remove-Item 'upx.zip'
+          Expand-Archive -Path 'upx.zip' -DestinationPath '.' -Force
+          Copy-Item -Path 'upx-4.2.4-win64\upx.exe' -Destination 'upx.exe' -Force
+          Remove-Item 'upx.zip' -Force
           Remove-Item -Recurse -Force 'upx-4.2.4-win64'
 
       - name: Build UIA EXE
