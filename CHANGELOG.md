@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-02
+
+### Added
+- **Auto Translation**: Added a lightweight, key-less network translation mechanism to automatically translate selected English text (or OCR results) to Chinese before reading it aloud.
+- Added language detection filter to bypass translation for purely Chinese text selections naturally, preserving zero latency.
+- Added a new configuration toggle `enable_auto_translation` which is exposed on the settings panel.
+
+### Changed
+- Increased the default height of the UI control panel window so that settings at the bottom are not obscured.
+
 ## [0.3.7] - 2026-02-27
 
 ### Changed

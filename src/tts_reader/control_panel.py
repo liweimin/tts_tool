@@ -19,8 +19,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
 
     root = tk.Tk()
     root.title("TTS Reader 控制面板")
-    root.geometry("820x600")
-    root.minsize(760, 520)
+    root.geometry("820x660")
+    root.minsize(760, 580)
 
     # Apply modern theme
     try:
@@ -48,6 +48,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     tts_rate_var = tk.StringVar(root)
     tts_voice_var = tk.StringVar(root)
     skip_empty_var = tk.BooleanVar(root)
+    enable_translation_var = tk.BooleanVar(root)
     status_var = tk.StringVar(root)
 
     log_path_var = tk.StringVar(root, str(log_path))
@@ -70,6 +71,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         tts_rate_var.set(str(config.tts_rate))
         tts_voice_var.set(config.tts_voice_contains)
         skip_empty_var.set(config.skip_if_no_text)
+        enable_translation_var.set(config.enable_auto_translation)
         set_status("已加载当前配置。")
 
     def parse_int(raw: str, field: str, minimum: int, maximum: int | None = None) -> int:
@@ -107,6 +109,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
             tts_rate=tts_rate,
             tts_voice_contains=tts_voice_var.get().strip(),
             skip_if_no_text=bool(skip_empty_var.get()),
+            enable_auto_translation=bool(enable_translation_var.get()),
         )
         validate_config(config)
         return config
@@ -170,6 +173,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         tts_rate_var=tts_rate_var,
         tts_voice_var=tts_voice_var,
         skip_empty_var=skip_empty_var,
+        enable_translation_var=enable_translation_var,
     )
     logs_text = _build_logs_tab(
         logs_tab=logs_tab,
@@ -207,6 +211,7 @@ def _build_settings_tab(
     tts_rate_var: tk.StringVar,
     tts_voice_var: tk.StringVar,
     skip_empty_var: tk.BooleanVar,
+    enable_translation_var: tk.BooleanVar,
 ) -> None:
     # 包装容器支持网格滚动或单纯的流式布局
     container = ttk.Frame(settings_tab, padding=14)
@@ -242,6 +247,11 @@ def _build_settings_tab(
         text="如果未获取到文本，不要语音提示失败",
         variable=skip_empty_var,
     ).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
+    ttk.Checkbutton(
+        tts_frame,
+        text="自动将提取到的英文字段翻译为中文后再朗读",
+        variable=enable_translation_var,
+    ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
 
 def _build_logs_tab(

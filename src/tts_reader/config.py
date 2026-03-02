@@ -46,6 +46,7 @@ class AppConfig:
     tts_rate: int = 180
     tts_voice_contains: str = ""
     skip_if_no_text: bool = False
+    enable_auto_translation: bool = True
 
 
 def _parse_hotkey(hotkey: str) -> tuple[int, int]:

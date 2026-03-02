@@ -14,6 +14,7 @@ from .screen_ocr import ScreenOcrReader
 from .selection import get_selected_text
 from .speaker import Speaker
 from .tray import TrayIcon
+from . import translator
 
 
 LOGGER = logging.getLogger(__name__)
@@ -140,6 +141,17 @@ class ReaderApp:
             LOGGER.info("Discarding stale text request id=%s before speak.", request_id)
             return
 
+        if config.enable_auto_translation and not translator.is_mostly_english(text):
+            pass # 是中文等不翻译
+        elif config.enable_auto_translation:
+            LOGGER.info("Text seems to be English, attempting translation...")
+            translated = translator.translate_to_chinese(text)
+            if translated:
+                LOGGER.info("Translation successful.")
+                text = translated
+            else:
+                LOGGER.warning("Translation attempts failed, falling back to original text.")
+
         with self._last_text_lock:
             self._last_text = text
         speaker.speak(text)
@@ -201,6 +213,18 @@ class ReaderApp:
         if not self._is_latest_request(request_id):
             LOGGER.info("Discarding stale screenshot request id=%s before speak.", request_id)
             return
+            
+        if config.enable_auto_translation and not translator.is_mostly_english(text):
+            pass # 是中文等不翻译
+        elif config.enable_auto_translation:
+            LOGGER.info("Screenshot text seems to be English, attempting translation...")
+            translated = translator.translate_to_chinese(text)
+            if translated:
+                LOGGER.info("Translation successful.")
+                text = translated
+            else:
+                LOGGER.warning("Translation attempts failed, falling back to original text.")
+                
         with self._last_text_lock:
             self._last_text = text
         speaker.speak(text)

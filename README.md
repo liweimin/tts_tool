@@ -9,7 +9,12 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.3.7` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.4.0` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.4.0 新增（中英互译版本）
+- **自动翻译**：引入了免 Key 的网络翻译机制。现在划选英文段落或截图截取大量英文内容后，工具会自动将英文翻译成流利的中文并进行朗读。
+- **智能拦截**：极速语言检测器能精准识别纯中文内容，保证原生中文在取词时依旧 0 延迟即刻发声，不受翻译引擎阻塞。
+- **设置扩展**：控制面板由于选项增多，默认尺寸得到了调整增大，并且内嵌了自动翻译开关。
 
 ## v0.3.7 新增 (极限瘦身版)
 - **体积压缩**：将 PyInstaller 打包环境做了极限精简，并且应用了核心组件的 UPX 无损压缩技术。单体免安装包最终大小暴跌至 **约16MB**。
@@ -75,7 +80,8 @@ python src\main.py
   "max_chars": 4000,
   "tts_rate": 180,
   "tts_voice_contains": "",
-  "skip_if_no_text": false
+  "skip_if_no_text": false,
+  "enable_auto_translation": true
 }
 ```
 
@@ -87,6 +93,7 @@ python src\main.py
 - `tts_rate`: 语速
 - `tts_voice_contains`: 按关键词匹配语音（可留空）
 - `skip_if_no_text`: `false` 时取词失败会语音提示“未获取到选中文本”
+- `enable_auto_translation`: 是否开启智能转译。截取大段英文时，自动网络翻译为中文朗读
 
 ## 控制面板
 
@@ -146,7 +153,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.3.7`
+- 当前版本：`v0.4.0`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`
