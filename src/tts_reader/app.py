@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import ctypes
+from datetime import datetime
 import logging
+import os
 from pathlib import Path
 import subprocess
 import sys
 import threading
 import time
+
+import win32clipboard
+import win32con
 
 from .config import AppConfig, DEFAULT_CONFIG_PATH, parse_hotkey, read_config, validate_config, write_config
 from .hotkey import GlobalHotkeyListener
@@ -35,6 +40,7 @@ class ReaderApp:
 
         text_modifiers, text_vk = parse_hotkey(config.hotkey)
         screenshot_modifiers, screenshot_vk = parse_hotkey(config.screenshot_hotkey)
+        save_screenshot_modifiers, save_screenshot_vk = parse_hotkey(config.save_screenshot_hotkey)
         self._speaker = Speaker(rate=config.tts_rate, voice_contains=config.tts_voice_contains)
         self._screen_ocr = ScreenOcrReader()
         self._text_hotkey = GlobalHotkeyListener(
@@ -46,6 +52,11 @@ class ReaderApp:
             modifiers=screenshot_modifiers,
             vk=screenshot_vk,
             on_trigger=self._on_screenshot_hotkey,
+        )
+        self._save_screenshot_hotkey = GlobalHotkeyListener(
+            modifiers=save_screenshot_modifiers,
+            vk=save_screenshot_vk,
+            on_trigger=self._on_save_screenshot_hotkey,
         )
         self._log_file = log_file or (Path.home() / "AppData" / "Local" / "tts-reader" / "logs" / "app.log")
         self._state_lock = threading.RLock()
@@ -68,11 +79,13 @@ class ReaderApp:
         self._screen_ocr.warmup_async()
         self._text_hotkey.start()
         self._screenshot_hotkey.start()
+        self._save_screenshot_hotkey.start()
         self._tray.start()
         LOGGER.info(
-            "App started. Use '%s' for selected text, '%s' for screenshot OCR.",
+            "App started. Use '%s' for selected text, '%s' for screenshot OCR, '%s' for saving screenshot.",
             self._config.hotkey,
             self._config.screenshot_hotkey,
+            self._config.save_screenshot_hotkey,
         )
 
         next_config_check = time.monotonic() + 0.5
@@ -89,6 +102,7 @@ class ReaderApp:
         self._tray.stop()
         self._text_hotkey.stop()
         self._screenshot_hotkey.stop()
+        self._save_screenshot_hotkey.stop()
         self._speaker.stop()
         LOGGER.info("App stopped.")
 
@@ -176,10 +190,10 @@ class ReaderApp:
         if not self._is_latest_request(request_id):
             LOGGER.info("Discarding stale screenshot request id=%s.", request_id)
             return
-        if result.method == "screenclip-aborted":
+        if result.method == "overlay-aborted":
             LOGGER.info("Screenshot request aborted (window=%s, request_id=%s).", window_title, request_id)
             return
-        if result.method == "screenclip-cancelled":
+        if result.method == "overlay-cancelled":
             LOGGER.info("Screenshot capture cancelled by user (window=%s).", window_title)
             return
 
@@ -229,6 +243,57 @@ class ReaderApp:
             self._last_text = text
         speaker.speak(text)
 
+    def _on_save_screenshot_hotkey(self) -> None:
+        with self._state_lock:
+            config = self._config
+            speaker = self._speaker
+        request_id = self._next_request_id()
+        speaker.interrupt()
+
+        window_title = _active_window_title()
+        LOGGER.info(
+            "Save screenshot hotkey triggered on window: %s (request_id=%s)",
+            window_title,
+            request_id,
+        )
+
+        capture_result = self._screen_ocr.capture_image(
+            abort_if=lambda: not self._is_latest_request(request_id),
+        )
+        if not self._is_latest_request(request_id):
+            LOGGER.info("Discarding stale save screenshot request id=%s.", request_id)
+            return
+        if capture_result.method == "overlay-aborted":
+            LOGGER.info("Save screenshot request aborted (window=%s, request_id=%s).", window_title, request_id)
+            return
+        if capture_result.method == "overlay-cancelled":
+            LOGGER.info("Save screenshot cancelled by user (window=%s).", window_title)
+            return
+        if not capture_result.image:
+            LOGGER.warning("Save screenshot returned no image (window=%s, request_id=%s).", window_title, request_id)
+            speaker.speak("截图未保存成功")
+            return
+
+        try:
+            save_dir = _resolve_screenshot_save_dir(config.screenshot_save_dir)
+            save_dir.mkdir(parents=True, exist_ok=True)
+            save_path = _build_screenshot_file_path(save_dir)
+            capture_result.image.save(save_path, format="PNG")
+            absolute_path = str(save_path.resolve())
+            _write_text_to_clipboard(absolute_path)
+        except Exception:
+            LOGGER.exception("Failed to save screenshot to configured directory.")
+            speaker.speak("截图保存失败")
+            return
+
+        LOGGER.info(
+            "Screenshot saved to %s (window=%s, capture_ms=%s, pixels=%s).",
+            absolute_path,
+            window_title,
+            capture_result.capture_ms,
+            capture_result.image_pixels,
+        )
+
     def _on_replay(self) -> None:
         with self._last_text_lock:
             text = self._last_text
@@ -265,12 +330,17 @@ class ReaderApp:
             old_config = self._config
             old_text_hotkey = self._text_hotkey
             old_screenshot_hotkey = self._screenshot_hotkey
+            old_save_screenshot_hotkey = self._save_screenshot_hotkey
             old_speaker = self._speaker
 
             text_hotkey_changed = new_config.hotkey.strip().lower() != old_config.hotkey.strip().lower()
             screenshot_hotkey_changed = (
                 new_config.screenshot_hotkey.strip().lower()
                 != old_config.screenshot_hotkey.strip().lower()
+            )
+            save_screenshot_hotkey_changed = (
+                new_config.save_screenshot_hotkey.strip().lower()
+                != old_config.save_screenshot_hotkey.strip().lower()
             )
             speaker_changed = (
                 new_config.tts_rate != old_config.tts_rate
@@ -284,6 +354,8 @@ class ReaderApp:
                     old_text_hotkey.stop()
                 if screenshot_hotkey_changed:
                     old_screenshot_hotkey.stop()
+                if save_screenshot_hotkey_changed:
+                    old_save_screenshot_hotkey.stop()
 
                 new_text_hotkey = old_text_hotkey
                 if text_hotkey_changed:
@@ -307,8 +379,22 @@ class ReaderApp:
                     new_screenshot_hotkey.start()
                     started_listeners.append(new_screenshot_hotkey)
 
+                new_save_screenshot_hotkey = old_save_screenshot_hotkey
+                if save_screenshot_hotkey_changed:
+                    save_screenshot_modifiers, save_screenshot_vk = parse_hotkey(
+                        new_config.save_screenshot_hotkey
+                    )
+                    new_save_screenshot_hotkey = GlobalHotkeyListener(
+                        modifiers=save_screenshot_modifiers,
+                        vk=save_screenshot_vk,
+                        on_trigger=self._on_save_screenshot_hotkey,
+                    )
+                    new_save_screenshot_hotkey.start()
+                    started_listeners.append(new_save_screenshot_hotkey)
+
                 self._text_hotkey = new_text_hotkey
                 self._screenshot_hotkey = new_screenshot_hotkey
+                self._save_screenshot_hotkey = new_save_screenshot_hotkey
                 if speaker_changed:
                     old_speaker.update_settings(
                         rate=new_config.tts_rate,
@@ -333,13 +419,21 @@ class ReaderApp:
                         self._screenshot_hotkey = old_screenshot_hotkey
                     except Exception:
                         LOGGER.exception("Failed to restore previous screenshot hotkey listener.")
+                if save_screenshot_hotkey_changed:
+                    try:
+                        old_save_screenshot_hotkey.start()
+                        self._save_screenshot_hotkey = old_save_screenshot_hotkey
+                    except Exception:
+                        LOGGER.exception("Failed to restore previous save screenshot hotkey listener.")
                 return False, f"应用配置失败: {exc}"
 
         LOGGER.info(
-            "Config updated from %s: hotkey=%s screenshot_hotkey=%s",
+            "Config updated from %s: hotkey=%s screenshot_hotkey=%s save_screenshot_hotkey=%s save_dir=%s",
             source,
             new_config.hotkey,
             new_config.screenshot_hotkey,
+            new_config.save_screenshot_hotkey,
+            new_config.screenshot_save_dir,
         )
         return True, "配置已保存并生效。"
 
@@ -431,3 +525,34 @@ def _get_file_mtime(path: Path) -> float | None:
         return path.stat().st_mtime
     except Exception:
         return None
+
+
+def _resolve_screenshot_save_dir(raw_path: str) -> Path:
+    value = raw_path.strip()
+    if value:
+        return Path(value).expanduser()
+    user_profile = os.getenv("USERPROFILE")
+    base = Path(user_profile) if user_profile else Path.home()
+    return base / "Desktop"
+
+
+def _build_screenshot_file_path(save_dir: Path) -> Path:
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+    return save_dir / f"tts_capture_{stamp}.png"
+
+
+def _write_text_to_clipboard(text: str) -> None:
+    for _ in range(30):
+        try:
+            win32clipboard.OpenClipboard()
+            break
+        except Exception:
+            time.sleep(0.01)
+    else:
+        raise RuntimeError("Could not open clipboard to write screenshot path.")
+
+    try:
+        win32clipboard.EmptyClipboard()
+        win32clipboard.SetClipboardData(win32con.CF_UNICODETEXT, text)
+    finally:
+        win32clipboard.CloseClipboard()

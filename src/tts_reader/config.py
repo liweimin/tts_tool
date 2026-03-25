@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -36,10 +37,18 @@ _VK_MAP = {
 }
 
 
+def _default_screenshot_save_dir() -> str:
+    user_profile = os.getenv("USERPROFILE")
+    base = Path(user_profile) if user_profile else Path.home()
+    return str(base / "Desktop")
+
+
 @dataclass(frozen=True)
 class AppConfig:
     hotkey: str = "alt+q"
     screenshot_hotkey: str = "alt+r"
+    save_screenshot_hotkey: str = "alt+e"
+    screenshot_save_dir: str = field(default_factory=_default_screenshot_save_dir)
     copy_delay_ms: int = 260
     copy_retry_count: int = 2
     max_chars: int = 4000
@@ -109,5 +118,19 @@ def hotkey_to_modifiers_and_vk(config: AppConfig) -> tuple[int, int]:
 def validate_config(config: AppConfig) -> None:
     _parse_hotkey(config.hotkey)
     _parse_hotkey(config.screenshot_hotkey)
-    if config.hotkey.strip().lower() == config.screenshot_hotkey.strip().lower():
-        raise ValueError("Text hotkey and screenshot hotkey cannot be the same.")
+    _parse_hotkey(config.save_screenshot_hotkey)
+
+    hotkeys = {
+        "text": config.hotkey.strip().lower(),
+        "screenshot_ocr": config.screenshot_hotkey.strip().lower(),
+        "save_screenshot": config.save_screenshot_hotkey.strip().lower(),
+    }
+    if len(set(hotkeys.values())) != len(hotkeys):
+        raise ValueError("Text/OCR/save screenshot hotkeys must all be different.")
+
+    save_dir = config.screenshot_save_dir.strip()
+    if not save_dir:
+        raise ValueError("Screenshot save directory cannot be empty.")
+    save_path = Path(save_dir).expanduser()
+    if save_path.exists() and not save_path.is_dir():
+        raise ValueError("Screenshot save directory must be a folder path.")

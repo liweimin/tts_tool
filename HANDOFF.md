@@ -1,8 +1,9 @@
-# TTS Reader Handoff (Minimal, v0.4.0)
+# TTS Reader Handoff (Minimal, v0.5.0)
 
 ## 1. 当前产品能力
 - Win10/Win11 常驻工具，选中文本后按 `Alt+Q` 朗读。
-- 截图 OCR 朗读：`Alt+R`，截图结果保留在系统剪贴板。
+- 截图 OCR 朗读：`Alt+R`，截图结果全程走内存链路，不占用系统剪贴板。
+- 截图保存：`Alt+E`，保存 PNG 到指定目录，并把图片绝对路径写入剪贴板。
 - **(NEW)** 英译中能力：支持智能拦截检测，选中或截图英文内容，将自动进行免 Key 网络翻译为中文然后朗读。
 - 新请求会抢占旧请求：
   - 文本/截图互相抢占。
@@ -22,6 +23,8 @@
 {
   "hotkey": "alt+q",
   "screenshot_hotkey": "alt+r",
+  "save_screenshot_hotkey": "alt+e",
+  "screenshot_save_dir": "C:\\Users\\<用户名>\\Desktop",
   "copy_delay_ms": 260,
   "copy_retry_count": 2,
   "max_chars": 4000,

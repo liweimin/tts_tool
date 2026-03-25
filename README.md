@@ -3,13 +3,20 @@
 Win10/Win11 桌面常驻工具。  
 在任意应用里选中文本后按快捷键（默认 `Alt+Q`）即可朗读。
 再次选中文本并触发快捷键时，会立即打断当前朗读并播放新文本。
-也支持截图 OCR 朗读（默认 `Alt+R`），截图内容仍保留在系统剪贴板，方便粘贴到其他软件。
+也支持截图 OCR 朗读（默认 `Alt+R`），截图内容全程走内存链路，不占用系统剪贴板。
+也支持截图保存（默认 `Alt+E`），截图会保存为 PNG 到指定目录，并把图片绝对路径写入系统剪贴板，方便直接粘贴给别人。
 
 ## 下载 EXE（Release）
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.4.0` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.5.0` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.5.0 新增（截图保存版本）
+- **截图保存**：新增独立截图保存链路，默认热键 `Alt+E`。框选后会将图片保存为 PNG 到指定目录。
+- **路径直贴**：截图保存成功后，程序会把图片绝对路径写入系统剪贴板，方便直接粘贴给别人。
+- **设置扩展**：控制面板新增截图保存热键与保存目录配置。
+- **轻量打包修正**：UIA 打包脚本恢复为轻量 `.spec` 构建路径，避免误把旧 OCR 依赖打进 EXE。
 
 ## v0.4.0 新增（中英互译版本）
 - **自动翻译**：引入了免 Key 的网络翻译机制。现在划选英文段落或截图截取大量英文内容后，工具会自动将英文翻译成流利的中文并进行朗读。
@@ -75,6 +82,8 @@ python src\main.py
 {
   "hotkey": "alt+q",
   "screenshot_hotkey": "alt+r",
+  "save_screenshot_hotkey": "alt+e",
+  "screenshot_save_dir": "C:\\Users\\<用户名>\\Desktop",
   "copy_delay_ms": 260,
   "copy_retry_count": 2,
   "max_chars": 4000,
@@ -87,6 +96,8 @@ python src\main.py
 
 - `hotkey`: 全局快捷键（默认 `alt+q`）
 - `screenshot_hotkey`: 截图朗读快捷键（默认 `alt+r`）
+- `save_screenshot_hotkey`: 截图保存快捷键（默认 `alt+e`）
+- `screenshot_save_dir`: 截图保存目录，默认桌面
 - `copy_delay_ms`: 复制兜底等待时长
 - `copy_retry_count`: 复制链路重试次数（建议 2）
 - `max_chars`: 单次朗读最大字符数
@@ -99,6 +110,7 @@ python src\main.py
 
 - 托盘菜单包含 `Read Again`、`Screenshot OCR`、`Settings`、`Logs`
 - `Settings` 可修改并即时生效
+- `Settings` 可配置截图保存快捷键和保存目录
 - 保存热键时会检查是否和系统/其他软件冲突，冲突会弹窗提示
 - `Logs` 页可直接复制日志文本，便于反馈问题
 
@@ -153,7 +165,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.4.0`
+- 当前版本：`v0.5.0`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`

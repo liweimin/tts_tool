@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import tkinter as tk
+from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 from typing import Callable
@@ -19,8 +19,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
 
     root = tk.Tk()
     root.title("TTS Reader 控制面板")
-    root.geometry("820x660")
-    root.minsize(760, 580)
+    root.geometry("860x720")
+    root.minsize(800, 620)
 
     # Apply modern theme
     try:
@@ -42,6 +42,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
 
     hotkey_var = tk.StringVar(root)
     screenshot_hotkey_var = tk.StringVar(root)
+    save_screenshot_hotkey_var = tk.StringVar(root)
+    screenshot_save_dir_var = tk.StringVar(root)
     copy_delay_var = tk.StringVar(root)
     copy_retry_var = tk.StringVar(root)
     max_chars_var = tk.StringVar(root)
@@ -65,6 +67,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         config = read_config(config_path)
         hotkey_var.set(config.hotkey)
         screenshot_hotkey_var.set(config.screenshot_hotkey)
+        save_screenshot_hotkey_var.set(config.save_screenshot_hotkey)
+        screenshot_save_dir_var.set(config.screenshot_save_dir)
         copy_delay_var.set(str(config.copy_delay_ms))
         copy_retry_var.set(str(config.copy_retry_count))
         max_chars_var.set(str(config.max_chars))
@@ -88,12 +92,19 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     def collect_config_from_form() -> AppConfig:
         hotkey = hotkey_var.get().strip().lower()
         screenshot_hotkey = screenshot_hotkey_var.get().strip().lower()
+        save_screenshot_hotkey = save_screenshot_hotkey_var.get().strip().lower()
+        screenshot_save_dir = screenshot_save_dir_var.get().strip()
         if not hotkey:
             raise ValueError("文本朗读快捷键不能为空。")
         if not screenshot_hotkey:
             raise ValueError("截图朗读快捷键不能为空。")
+        if not save_screenshot_hotkey:
+            raise ValueError("截图保存快捷键不能为空。")
+        if not screenshot_save_dir:
+            raise ValueError("截图保存目录不能为空。")
         parse_hotkey(hotkey)
         parse_hotkey(screenshot_hotkey)
+        parse_hotkey(save_screenshot_hotkey)
 
         copy_delay_ms = parse_int(copy_delay_var.get(), "配置延迟缓冲", minimum=80)
         copy_retry_count = parse_int(copy_retry_var.get(), "复制备用重试次数", minimum=1, maximum=6)
@@ -103,6 +114,8 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         config = AppConfig(
             hotkey=hotkey,
             screenshot_hotkey=screenshot_hotkey,
+            save_screenshot_hotkey=save_screenshot_hotkey,
+            screenshot_save_dir=screenshot_save_dir,
             copy_delay_ms=copy_delay_ms,
             copy_retry_count=copy_retry_count,
             max_chars=max_chars,
@@ -163,10 +176,21 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         else:
             messagebox.showinfo("提示", "文件暂不存在。")
 
+    def choose_screenshot_save_dir() -> None:
+        selected = filedialog.askdirectory(
+            title="选择截图保存目录",
+            initialdir=screenshot_save_dir_var.get().strip() or str(Path.home()),
+            mustexist=False,
+        )
+        if selected:
+            screenshot_save_dir_var.set(selected)
+
     _build_settings_tab(
         settings_tab=settings_tab,
         hotkey_var=hotkey_var,
         screenshot_hotkey_var=screenshot_hotkey_var,
+        save_screenshot_hotkey_var=save_screenshot_hotkey_var,
+        screenshot_save_dir_var=screenshot_save_dir_var,
         copy_delay_var=copy_delay_var,
         copy_retry_var=copy_retry_var,
         max_chars_var=max_chars_var,
@@ -174,6 +198,7 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         tts_voice_var=tts_voice_var,
         skip_empty_var=skip_empty_var,
         enable_translation_var=enable_translation_var,
+        on_choose_screenshot_save_dir=choose_screenshot_save_dir,
     )
     logs_text = _build_logs_tab(
         logs_tab=logs_tab,
@@ -205,6 +230,8 @@ def _build_settings_tab(
     settings_tab: ttk.Frame,
     hotkey_var: tk.StringVar,
     screenshot_hotkey_var: tk.StringVar,
+    save_screenshot_hotkey_var: tk.StringVar,
+    screenshot_save_dir_var: tk.StringVar,
     copy_delay_var: tk.StringVar,
     copy_retry_var: tk.StringVar,
     max_chars_var: tk.StringVar,
@@ -212,6 +239,7 @@ def _build_settings_tab(
     tts_voice_var: tk.StringVar,
     skip_empty_var: tk.BooleanVar,
     enable_translation_var: tk.BooleanVar,
+    on_choose_screenshot_save_dir: Callable[[], None],
 ) -> None:
     # 包装容器支持网格滚动或单纯的流式布局
     container = ttk.Frame(settings_tab, padding=14)
@@ -224,6 +252,21 @@ def _build_settings_tab(
 
     _add_labeled_entry(hotkey_frame, 0, "选中文本朗读快捷键", hotkey_var)
     _add_labeled_entry(hotkey_frame, 1, "截图朗读快捷键", screenshot_hotkey_var)
+    _add_labeled_entry(hotkey_frame, 2, "截图保存快捷键", save_screenshot_hotkey_var)
+
+    save_frame = ttk.LabelFrame(container, text="截图保存", padding=14)
+    save_frame.pack(fill=tk.X, pady=(0, 15))
+    save_frame.columnconfigure(1, weight=1)
+
+    ttk.Label(save_frame, text="截图保存目录").grid(row=0, column=0, sticky=tk.W, pady=6, padx=(0, 15))
+    ttk.Entry(save_frame, textvariable=screenshot_save_dir_var).grid(row=0, column=1, sticky=tk.EW, pady=6)
+    ttk.Button(save_frame, text="浏览...", command=on_choose_screenshot_save_dir).grid(
+        row=0,
+        column=2,
+        sticky=tk.E,
+        padx=(10, 0),
+        pady=6,
+    )
 
     # === 【剪贴板与 OCR】 ===
     ocr_frame = ttk.LabelFrame(container, text="容错与延时管理", padding=14)
@@ -312,20 +355,26 @@ def read_log_tail(log_path: Path, max_lines: int = 500) -> str:
 def _has_hotkey_conflict(current: AppConfig, new_config: AppConfig) -> bool:
     current_text = current.hotkey.strip().lower()
     current_screenshot = current.screenshot_hotkey.strip().lower()
+    current_save_screenshot = current.save_screenshot_hotkey.strip().lower()
     new_text = new_config.hotkey.strip().lower()
     new_screenshot = new_config.screenshot_hotkey.strip().lower()
+    new_save_screenshot = new_config.save_screenshot_hotkey.strip().lower()
 
     releasing = set()
     if new_text != current_text:
         releasing.add(current_text)
     if new_screenshot != current_screenshot:
         releasing.add(current_screenshot)
+    if new_save_screenshot != current_save_screenshot:
+        releasing.add(current_save_screenshot)
 
     changed_candidates: list[str] = []
     if new_text != current_text:
         changed_candidates.append(new_text)
     if new_screenshot != current_screenshot:
         changed_candidates.append(new_screenshot)
+    if new_save_screenshot != current_save_screenshot:
+        changed_candidates.append(new_save_screenshot)
 
     for hotkey in changed_candidates:
         if hotkey in releasing:

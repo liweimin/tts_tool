@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-03-25
+
+### Added
+- Added a dedicated screenshot save flow with default hotkey `Alt+E`.
+- Added config field `save_screenshot_hotkey` for customizing the screenshot save hotkey.
+- Added config field `screenshot_save_dir` for customizing where captured PNG files are stored.
+- Saving a screenshot now writes the absolute file path to the clipboard for easy sharing.
+
+### Changed
+- The screenshot save feature now defaults to the Desktop folder and is configurable in the settings panel.
+- The settings panel now exposes screenshot save hotkey and save directory controls.
+- The UIA EXE build script now uses the lightweight `.spec` path again, avoiding accidental bundling of deprecated OCR dependencies.
+
+### Fixed
+- Fixed a regression in the screenshot OCR flow where `capture_ms` could raise `NameError` and break screenshot reading.
+- Fixed screenshot cancellation handling by aligning the overlay result states across the app.
+
 ## [0.4.0] - 2026-03-02
 
 ### Added

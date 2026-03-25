@@ -27,6 +27,14 @@ class ScreenOcrResult:
     image_pixels: int = 0
 
 
+@dataclass(frozen=True)
+class ScreenCaptureResult:
+    image: Image.Image | None
+    method: str
+    capture_ms: int
+    image_pixels: int = 0
+
+
 class ScreenOcrReader:
     def __init__(self) -> None:
         self._engine: ocr.OcrEngine | None = None
@@ -42,12 +50,51 @@ class ScreenOcrReader:
         self,
         abort_if: Callable[[], bool] | None = None,
     ) -> ScreenOcrResult:
-        started_at = time.perf_counter()
-        
-        if abort_if and abort_if():
-            return ScreenOcrResult(text=None, method="overlay-aborted", capture_ms=_elapsed_ms(started_at))
+        capture_result = self.capture_image(abort_if=abort_if)
+        if capture_result.method in {"overlay-aborted", "overlay-cancelled"}:
+            return ScreenOcrResult(
+                text=None,
+                method=capture_result.method,
+                capture_ms=capture_result.capture_ms,
+            )
+        if not capture_result.image:
+            return ScreenOcrResult(
+                text=None,
+                method="overlay-empty",
+                capture_ms=capture_result.capture_ms,
+            )
 
-        # We need a synchronization primitive to wait for the overlay callback
+        ocr_start = time.perf_counter()
+        text = self._recognize_text_sync(capture_result.image)
+        ocr_ms = _elapsed_ms(ocr_start)
+        pixels = capture_result.image_pixels
+
+        if text:
+            return ScreenOcrResult(
+                text=text,
+                method="overlay-windows-ocr",
+                capture_ms=capture_result.capture_ms,
+                ocr_ms=ocr_ms,
+                image_pixels=pixels,
+            )
+
+        return ScreenOcrResult(
+            text=None,
+            method="overlay-windows-ocr-empty",
+            capture_ms=capture_result.capture_ms,
+            ocr_ms=ocr_ms,
+            image_pixels=pixels,
+        )
+
+    def capture_image(
+        self,
+        abort_if: Callable[[], bool] | None = None,
+    ) -> ScreenCaptureResult:
+        started_at = time.perf_counter()
+
+        if abort_if and abort_if():
+            return ScreenCaptureResult(image=None, method="overlay-aborted", capture_ms=_elapsed_ms(started_at))
+
         event = threading.Event()
         captured_image: Image.Image | None = None
 
@@ -57,45 +104,24 @@ class ScreenOcrReader:
             event.set()
 
         overlay = ScreenshotOverlay(on_capture=_on_capture)
-        # Block the current thread (which handles the hotkey) while the overlay runs.
-        # However, overlay needs to run in the main thread if it's Tkinter, but we are in a hotkey background thread.
-        # Actually Tkinter can run in a separate thread as long as it handles its own loop, which overlay.py does.
         overlay.start()
-        
+
         while not event.is_set():
             if abort_if and abort_if():
-                # We can't kill tk from outside easily without references, but user aborting implies new request.
                 pass
             time.sleep(0.05)
-            
+
         capture_ms = _elapsed_ms(started_at)
-        
         if captured_image is None:
-            return ScreenOcrResult(text=None, method="overlay-cancelled", capture_ms=capture_ms)
-            
+            return ScreenCaptureResult(image=None, method="overlay-cancelled", capture_ms=capture_ms)
         if abort_if and abort_if():
-            return ScreenOcrResult(text=None, method="overlay-aborted", capture_ms=capture_ms)
+            return ScreenCaptureResult(image=None, method="overlay-aborted", capture_ms=capture_ms)
 
-        ocr_start = time.perf_counter()
-        text = self._recognize_text_sync(captured_image)
-        ocr_ms = _elapsed_ms(ocr_start)
-        pixels = captured_image.width * captured_image.height
-
-        if text:
-            return ScreenOcrResult(
-                text=text,
-                method="overlay-windows-ocr",
-                capture_ms=capture_ms,
-                ocr_ms=ocr_ms,
-                image_pixels=pixels,
-            )
-
-        return ScreenOcrResult(
-            text=None,
-            method="overlay-windows-ocr-empty",
+        return ScreenCaptureResult(
+            image=captured_image,
+            method="overlay-captured",
             capture_ms=capture_ms,
-            ocr_ms=ocr_ms,
-            image_pixels=pixels,
+            image_pixels=captured_image.width * captured_image.height,
         )
 
     def warmup_async(self) -> None:

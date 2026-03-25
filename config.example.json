@@ -1,10 +1,13 @@
 {
   "hotkey": "alt+q",
   "screenshot_hotkey": "alt+r",
+  "save_screenshot_hotkey": "alt+e",
+  "screenshot_save_dir": "C:\\Users\\<用户名>\\Desktop",
   "copy_delay_ms": 260,
   "copy_retry_count": 2,
   "max_chars": 4000,
   "tts_rate": 180,
   "tts_voice_contains": "",
-  "skip_if_no_text": false
+  "skip_if_no_text": false,
+  "enable_auto_translation": true
 }
