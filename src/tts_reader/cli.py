@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import logging
 import msvcrt
 import os
@@ -16,6 +17,7 @@ _INSTANCE_LOCK_FILE = None
 
 
 def main() -> int:
+    _enable_dpi_awareness()
     args = _parse_args()
     if args.control_panel:
         config_path = Path(args.config_path) if args.config_path else DEFAULT_CONFIG_PATH
@@ -92,3 +94,31 @@ def _acquire_instance_lock() -> bool:
         return False
     _INSTANCE_LOCK_FILE = lock_file
     return True
+
+
+def _enable_dpi_awareness() -> None:
+    try:
+        user32 = ctypes.windll.user32
+        shcore = getattr(ctypes.windll, "shcore", None)
+    except Exception:
+        return
+
+    try:
+        # PER_MONITOR_AWARE_V2 keeps Tk root coordinates aligned with modern
+        # Windows scaling behavior on mixed-DPI and multi-monitor setups.
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return
+    except Exception:
+        pass
+
+    if shcore is not None:
+        try:
+            if shcore.SetProcessDpiAwareness(2) == 0:
+                return
+        except Exception:
+            pass
+
+    try:
+        user32.SetProcessDPIAware()
+    except Exception:
+        pass

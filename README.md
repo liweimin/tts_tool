@@ -10,7 +10,11 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.5.0` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.5.1` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.5.1 修复
+- **截图保存裁剪修复**：修复了在 Windows 显示缩放开启时，框选完整但保存结果缺失右侧或下侧区域的问题。
+- **DPI 感知增强**：进程启动时启用 DPI 感知，提升截图保存与截图 OCR 在缩放显示器上的坐标一致性。
 
 ## v0.5.0 新增（截图保存版本）
 - **截图保存**：新增独立截图保存链路，默认热键 `Alt+E`。框选后会将图片保存为 PNG 到指定目录。
@@ -165,7 +169,7 @@ pyinstaller --noconfirm --onefile --windowed --name tts-reader src\main.py
 
 ## 版本发布
 
-- 当前版本：`v0.5.0`
+- 当前版本：`v0.5.1`
 - 仓库内置 GitHub Actions 发布流：推送 `v*` tag 后会自动构建并上传以下 Release 资产：
   - `tts-reader-uia.exe`
   - `SHA256SUMS.txt`

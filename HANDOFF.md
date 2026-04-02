@@ -1,4 +1,4 @@
-# TTS Reader Handoff (Minimal, v0.5.0)
+# TTS Reader Handoff (Minimal, v0.5.1)
 
 ## 1. 当前产品能力
 - Win10/Win11 常驻工具，选中文本后按 `Alt+Q` 朗读。

@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-02
+
+### Fixed
+- Fixed screenshot selection cropping on Windows systems with display scaling enabled by mapping overlay coordinates to the captured image's physical pixel space.
+- Enabled DPI awareness at process startup so screenshot save/OCR coordinates stay aligned more reliably across scaled displays.
+
 ## [0.5.0] - 2026-03-25
 
 ### Added
