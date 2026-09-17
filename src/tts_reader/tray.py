@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import sys
 import threading
 from typing import Callable
 
@@ -37,23 +39,41 @@ class TrayIcon:
             self._thread.join(timeout=2.0)
 
     def _run(self) -> None:
-        image = _build_icon_image()
+        image = _get_icon_image()
         menu = pystray.Menu(
-            pystray.MenuItem("Read Again", lambda _icon, _item: self._on_replay()),
-            pystray.MenuItem("Screenshot OCR", lambda _icon, _item: self._on_read_screenshot()),
-            pystray.MenuItem("Settings", lambda _icon, _item: self._on_settings()),
-            pystray.MenuItem("Logs", lambda _icon, _item: self._on_logs()),
-            pystray.MenuItem("Exit", lambda _icon, _item: self._on_exit()),
+            pystray.MenuItem("朗读选中文本 (Alt+Q)", lambda _icon, _item: self._on_replay()),
+            pystray.MenuItem("截图 OCR 朗读 (Alt+R)", lambda _icon, _item: self._on_read_screenshot()),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("系统设置", lambda _icon, _item: self._on_settings(), default=True),
+            pystray.MenuItem("运行日志", lambda _icon, _item: self._on_logs()),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("退出", lambda _icon, _item: self._on_exit()),
         )
-        self._icon = pystray.Icon("tts-reader", image, "TTS Reader", menu)
+        self._icon = pystray.Icon("tts-reader", image, "TTS Reader (双击打开设置)", menu)
         self._icon.run()
 
 
+def _get_icon_image() -> Image.Image:
+    candidates = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "assets" / "icon.png")
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "assets" / "icon.png")
+    candidates.append(Path("assets") / "icon.png")
+
+    for p in candidates:
+        if p.exists():
+            try:
+                return Image.open(p)
+            except Exception:
+                pass
+    return _build_icon_image()
+
+
 def _build_icon_image(size: int = 64) -> Image.Image:
-    image = Image.new("RGB", (size, size), (26, 35, 45))
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((8, 8, size - 8, size - 8), radius=12, fill=(56, 140, 240))
-    draw.polygon([(24, 24), (24, 40), (38, 32)], fill=(255, 255, 255))
-    draw.rectangle((40, 25, 44, 39), fill=(255, 255, 255))
-    draw.rectangle((46, 22, 50, 42), fill=(255, 255, 255))
+    draw.rounded_rectangle((4, 4, size - 4, size - 4), radius=14, fill=(33, 115, 243))
+    # Speaker cone and waves
+    draw.polygon([(16, 24), (16, 40), (28, 40), (40, 48), (40, 16), (28, 24)], fill=(255, 255, 255))
+    draw.arc([36, 20, 52, 44], start=-50, end=50, fill=(255, 255, 255), width=3)
     return image

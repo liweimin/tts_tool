@@ -1,32 +1,94 @@
 from __future__ import annotations
 
+import asyncio
+import ctypes
 import logging
+import os
+from pathlib import Path
+import tempfile
 import threading
 import time
 
-import pyttsx3
+try:
+    import pyttsx3
+except ImportError:
+    pyttsx3 = None
 import pythoncom
+import edge_tts
 
 
 _LOGGER = logging.getLogger(__name__)
+_WINMM = ctypes.windll.winmm
+
+
+def _format_edge_rate(rate: int) -> str:
+    """Convert SAPI-style rate (~180 baseline) to Edge-TTS percentage format (e.g. +0%, +20%, -15%)."""
+    if rate == 180:
+        return "+0%"
+    if rate > 180:
+        pct = int(round((rate - 180) / 180.0 * 100))
+        return f"+{pct}%"
+    pct = int(round((180 - rate) / 180.0 * 100))
+    return f"-{pct}%"
+
+
+def _mci_send(cmd: str) -> tuple[int, str]:
+    buf = ctypes.create_unicode_buffer(128)
+    err = _WINMM.mciSendStringW(cmd, buf, 128, None)
+    return err, buf.value
+
+
+def _stop_and_close_mci(alias: str) -> None:
+    _WINMM.mciSendStringW(f"stop {alias}", None, 0, None)
+    _WINMM.mciSendStringW(f"close {alias}", None, 0, None)
 
 
 class Speaker:
-    def __init__(self, rate: int, voice_contains: str = "") -> None:
+    def __init__(
+        self,
+        rate: int = 180,
+        voice_contains: str = "",
+        engine: str = "edge",
+        edge_voice: str = "zh-CN-XiaoxiaoNeural",
+    ) -> None:
         self._rate = rate
         self._voice_contains = voice_contains.strip().lower()
+        self._engine_type = engine.strip().lower() or "edge"
+        self._edge_voice = edge_voice.strip() or "zh-CN-XiaoxiaoNeural"
+
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._ready_event = threading.Event()
         self._request_event = threading.Event()
         self._state_lock = threading.Lock()
+
         self._pending_text: str | None = None
         self._pending_rate: int | None = None
         self._pending_voice_contains: str | None = None
+        self._pending_engine: str | None = None
+        self._pending_edge_voice: str | None = None
+
         self._interrupt_only = False
         self._is_speaking = False
-        self._default_voice_id: str | None = None
+        self._generation = 0
         self._startup_error: Exception | None = None
+
+        # SAPI COM objects
+        self._sapi_engine: pyttsx3.Engine | None = None
+        self._default_voice_id: str | None = None
+
+        # Active async task for Edge-TTS
+        self._active_loop: asyncio.AbstractEventLoop | None = None
+        self._active_async_task: asyncio.Task | None = None
+
+        # Temp directory for Edge-TTS audio files
+        self._temp_dir = Path(tempfile.gettempdir()) / "tts_reader"
+        try:
+            self._temp_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            _LOGGER.warning("Could not create temp dir %s", self._temp_dir, exc_info=True)
+
+        self._mci_alias = f"tts_reader_mci_{os.getpid()}"
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -41,128 +103,156 @@ class Speaker:
         if not text:
             return
         with self._state_lock:
+            self._generation += 1
             self._pending_text = text
             self._interrupt_only = False
+            self._is_speaking = True
+            self._stop_active_playback_locked()
         self._request_event.set()
-        _LOGGER.info("Speech request received: %s chars.", len(text))
+        _LOGGER.info("Speech request received (gen=%s): %s chars.", self._generation, len(text))
 
     def interrupt(self) -> None:
         with self._state_lock:
+            self._generation += 1
             self._pending_text = None
             self._interrupt_only = True
+            self._is_speaking = False
+            self._stop_active_playback_locked()
         self._request_event.set()
-        _LOGGER.info("Speech interrupt requested.")
+        _LOGGER.info("Speech interrupt requested (gen=%s).", self._generation)
 
     def stop(self) -> None:
         self._stop_event.set()
-        self._request_event.set()
+        self.interrupt()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3.0)
 
-    def update_settings(self, rate: int, voice_contains: str) -> None:
+    def update_settings(
+        self,
+        rate: int,
+        voice_contains: str,
+        engine: str = "edge",
+        edge_voice: str = "zh-CN-XiaoxiaoNeural",
+    ) -> None:
         with self._state_lock:
             self._pending_rate = rate
             self._pending_voice_contains = voice_contains.strip().lower()
+            self._pending_engine = engine.strip().lower() or "edge"
+            self._pending_edge_voice = edge_voice.strip() or "zh-CN-XiaoxiaoNeural"
         self._request_event.set()
-        _LOGGER.info("Speaker settings update requested: rate=%s voice_contains=%s", rate, voice_contains)
+        _LOGGER.info(
+            "Speaker settings update requested: rate=%s voice_contains=%s engine=%s edge_voice=%s",
+            rate,
+            voice_contains,
+            engine,
+            edge_voice,
+        )
+
+    def _stop_active_playback_locked(self) -> None:
+        _stop_and_close_mci(self._mci_alias)
+        if self._active_loop and self._active_async_task and not self._active_async_task.done():
+            try:
+                self._active_loop.call_soon_threadsafe(self._active_async_task.cancel)
+            except Exception:
+                pass
+        if self._sapi_engine:
+            try:
+                self._sapi_engine.stop()
+            except Exception:
+                pass
 
     def _run(self) -> None:
         pythoncom.CoInitialize()
         try:
-            engine = pyttsx3.init()
-            self._default_voice_id = str(engine.getProperty("voice"))
-            engine.setProperty("rate", self._rate)
-            engine.connect("started-utterance", self._on_started_utterance)
-            engine.connect("finished-utterance", self._on_finished_utterance)
-            self._apply_voice_preference(engine, self._voice_contains)
-            selected_voice = engine.getProperty("voice")
-            _LOGGER.info("TTS engine initialized. rate=%s voice=%s", self._rate, selected_voice)
+            self._init_sapi()
         except Exception as exc:
-            self._startup_error = exc
-            self._ready_event.set()
-            pythoncom.CoUninitialize()
-            return
+            _LOGGER.warning("SAPI init failed (offline speech may not work): %s", exc)
 
         self._ready_event.set()
-        _LOGGER.info("Speaker started.")
+        _LOGGER.info(
+            "Speaker thread started. engine=%s edge_voice=%s rate=%s",
+            self._engine_type,
+            self._edge_voice,
+            self._rate,
+        )
 
-        try:
-            engine.startLoop(False)
-            while not self._stop_event.is_set():
-                self._apply_pending_settings(engine)
-                self._consume_pending_request(engine)
-                engine.iterate()
-                time.sleep(0.01)
-        except Exception:
-            _LOGGER.exception("Speaker loop failed.")
-        finally:
-            try:
-                engine.stop()
-            except Exception:
-                pass
-            try:
-                engine.endLoop()
-            except Exception:
-                pass
+        while not self._stop_event.is_set():
+            self._apply_pending_settings()
+
+            text = None
+            gen = 0
+            with self._state_lock:
+                if self._request_event.is_set():
+                    self._request_event.clear()
+                    if not self._interrupt_only:
+                        text = self._pending_text
+                        gen = self._generation
+                        self._pending_text = None
+                    self._interrupt_only = False
+
+            if text:
+                self._handle_speech_request(text, gen)
+
+            # Wait for next event or timeout
+            self._request_event.wait(timeout=0.05)
+
+        self._cleanup()
         pythoncom.CoUninitialize()
         _LOGGER.info("Speaker stopped.")
 
-    def _consume_pending_request(self, engine: pyttsx3.Engine) -> None:
-        if not self._request_event.is_set():
+    def _init_sapi(self) -> None:
+        if pyttsx3 is None:
+            _LOGGER.warning("pyttsx3 is not installed, SAPI offline fallback unavailable.")
             return
-        self._request_event.clear()
-        with self._state_lock:
-            text = self._pending_text
-            interrupt_only = self._interrupt_only
-            self._pending_text = None
-            self._interrupt_only = False
-        if interrupt_only:
-            self._force_stop(engine, "explicit interrupt request")
-        if not text:
-            return
-        try:
-            # Always stop before enqueuing new speech to avoid race on _is_speaking flag.
-            self._force_stop(engine, "new speech request")
-            engine.say(text)
-        except Exception:
-            _LOGGER.exception("Failed to enqueue speech request.")
+        engine = pyttsx3.init()
+        self._default_voice_id = str(engine.getProperty("voice"))
+        engine.setProperty("rate", self._rate)
+        self._apply_sapi_voice_preference(engine, self._voice_contains)
+        self._sapi_engine = engine
+        _LOGGER.info("SAPI engine initialized. default_voice=%s", self._default_voice_id)
 
-    def _force_stop(self, engine: pyttsx3.Engine, reason: str) -> None:
-        _LOGGER.info("Interrupting current speech due to %s.", reason)
-        try:
-            engine.stop()
-            # Let SAPI dispatch stop events before handling next command.
-            for _ in range(3):
-                engine.iterate()
-                time.sleep(0.005)
-        except Exception:
-            _LOGGER.debug("engine.stop() failed during %s.", reason, exc_info=True)
-
-    def _apply_pending_settings(self, engine: pyttsx3.Engine) -> None:
+    def _apply_pending_settings(self) -> None:
         with self._state_lock:
             pending_rate = self._pending_rate
             pending_voice = self._pending_voice_contains
+            pending_engine = self._pending_engine
+            pending_edge_voice = self._pending_edge_voice
             self._pending_rate = None
             self._pending_voice_contains = None
+            self._pending_engine = None
+            self._pending_edge_voice = None
 
-        if pending_rate is None and pending_voice is None:
+        if all(x is None for x in (pending_rate, pending_voice, pending_engine, pending_edge_voice)):
             return
-        try:
-            if pending_rate is not None:
-                self._rate = pending_rate
-                engine.setProperty("rate", pending_rate)
-            if pending_voice is not None:
-                self._voice_contains = pending_voice
-                self._apply_voice_preference(engine, pending_voice)
-            _LOGGER.info(
-                "Speaker settings applied: rate=%s voice=%s",
-                engine.getProperty("rate"),
-                engine.getProperty("voice"),
-            )
-        except Exception:
-            _LOGGER.exception("Failed to apply speaker settings.")
 
-    def _apply_voice_preference(self, engine: pyttsx3.Engine, voice_contains: str) -> None:
+        if pending_rate is not None:
+            self._rate = pending_rate
+            if self._sapi_engine:
+                try:
+                    self._sapi_engine.setProperty("rate", pending_rate)
+                except Exception:
+                    pass
+
+        if pending_voice is not None:
+            self._voice_contains = pending_voice
+            if self._sapi_engine:
+                self._apply_sapi_voice_preference(self._sapi_engine, pending_voice)
+
+        if pending_engine is not None:
+            self._engine_type = pending_engine
+
+        if pending_edge_voice is not None:
+            self._edge_voice = pending_edge_voice
+
+        _LOGGER.info(
+            "Speaker settings applied: rate=%s engine=%s edge_voice=%s sapi_voice_contains=%s",
+            self._rate,
+            self._engine_type,
+            self._edge_voice,
+            self._voice_contains,
+        )
+
+    def _apply_sapi_voice_preference(self, engine: pyttsx3.Engine, voice_contains: str) -> None:
         if voice_contains:
             for voice in engine.getProperty("voices"):
                 content = f"{voice.id} {voice.name}".lower()
@@ -172,13 +262,161 @@ class Speaker:
         elif self._default_voice_id:
             engine.setProperty("voice", self._default_voice_id)
 
-    def _on_started_utterance(self, name: str | None = None) -> None:
-        self._is_speaking = True
-        _LOGGER.info("Speech playback started.")
+    def _is_gen_active(self, gen: int) -> bool:
+        with self._state_lock:
+            return gen == self._generation and not self._stop_event.is_set()
 
-    def _on_finished_utterance(self, name: str | None = None, completed: bool = True) -> None:
-        self._is_speaking = False
-        if completed:
-            _LOGGER.info("Speech playback completed.")
-        else:
-            _LOGGER.info("Speech playback interrupted.")
+    def _handle_speech_request(self, text: str, gen: int) -> None:
+        if not self._is_gen_active(gen):
+            with self._state_lock:
+                if gen == self._generation:
+                    self._is_speaking = False
+            return
+
+        with self._state_lock:
+            self._is_speaking = True
+        _LOGGER.info("Speech playback starting for gen=%s, engine=%s", gen, self._engine_type)
+
+        try:
+            if self._engine_type == "edge":
+                success = self._speak_edge_with_fallback(text, gen)
+                if not success and self._is_gen_active(gen):
+                    _LOGGER.warning("Edge-TTS unsuccessful, falling back to SAPI5 for gen=%s", gen)
+                    self._speak_sapi(text, gen)
+            else:
+                self._speak_sapi(text, gen)
+        finally:
+            with self._state_lock:
+                if gen == self._generation:
+                    self._is_speaking = False
+            _LOGGER.info("Speech playback completed or interrupted for gen=%s", gen)
+
+    def _speak_edge_with_fallback(self, text: str, gen: int) -> bool:
+        edge_file = self._temp_dir / f"tts_{os.getpid()}_{gen}.mp3"
+        rate_str = _format_edge_rate(self._rate)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        with self._state_lock:
+            self._active_loop = loop
+
+        try:
+            synth_coro = self._async_edge_synthesize(text, self._edge_voice, rate_str, edge_file, gen)
+            task = loop.create_task(synth_coro)
+            with self._state_lock:
+                self._active_async_task = task
+
+            try:
+                synthesized = loop.run_until_complete(task)
+            except asyncio.CancelledError:
+                _LOGGER.info("Edge-TTS task cancelled for gen=%s", gen)
+                _cleanup_file(edge_file)
+                return False
+            except Exception as exc:
+                _LOGGER.warning("Edge-TTS synthesis error (%s): %s", type(exc).__name__, exc)
+                _cleanup_file(edge_file)
+                return False
+            finally:
+                with self._state_lock:
+                    self._active_async_task = None
+        finally:
+            with self._state_lock:
+                self._active_loop = None
+            try:
+                loop.close()
+            except Exception:
+                pass
+
+        if not synthesized or not self._is_gen_active(gen):
+            _cleanup_file(edge_file)
+            return False
+
+        try:
+            return self._play_audio_mci(edge_file, gen)
+        finally:
+            _cleanup_file(edge_file)
+
+    async def _async_edge_synthesize(
+        self, text: str, voice: str, rate: str, output_file: Path, gen: int
+    ) -> bool:
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        with open(output_file, "wb") as f:
+            async for chunk in communicate.stream():
+                if not self._is_gen_active(gen):
+                    return False
+                if chunk["type"] == "audio":
+                    f.write(chunk["data"])
+        return output_file.exists() and output_file.stat().st_size > 0
+
+    def _play_audio_mci(self, audio_path: Path, gen: int) -> bool:
+        if not self._is_gen_active(gen):
+            return False
+
+        _stop_and_close_mci(self._mci_alias)
+        abs_path = str(audio_path.resolve())
+
+        open_cmd = f'open "{abs_path}" type mpegvideo alias {self._mci_alias}'
+        err, _ = _mci_send(open_cmd)
+        if err != 0:
+            _LOGGER.error("Failed to open audio via MCI (error code %s)", err)
+            return False
+
+        play_err, _ = _mci_send(f"play {self._mci_alias}")
+        if play_err != 0:
+            _LOGGER.error("Failed to play audio via MCI (error code %s)", play_err)
+            _stop_and_close_mci(self._mci_alias)
+            return False
+
+        # Wait for playback completion or interruption
+        while self._is_gen_active(gen):
+            _, mode = _mci_send(f"status {self._mci_alias} mode")
+            if mode.strip().lower() in ("stopped", ""):
+                break
+            time.sleep(0.02)
+
+        _stop_and_close_mci(self._mci_alias)
+        return True
+
+    def _speak_sapi(self, text: str, gen: int) -> None:
+        if not self._sapi_engine:
+            _LOGGER.error("SAPI engine not available for speech")
+            return
+
+        if not self._is_gen_active(gen):
+            return
+
+        try:
+            self._sapi_engine.say(text)
+            self._sapi_engine.startLoop(False)
+            while self._is_gen_active(gen):
+                self._sapi_engine.iterate()
+                time.sleep(0.01)
+                if not self._sapi_engine.isBusy():
+                    break
+        except Exception:
+            _LOGGER.exception("SAPI speech error")
+        finally:
+            try:
+                self._sapi_engine.stop()
+            except Exception:
+                pass
+            try:
+                self._sapi_engine.endLoop()
+            except Exception:
+                pass
+
+    def _cleanup(self) -> None:
+        _stop_and_close_mci(self._mci_alias)
+        if self._sapi_engine:
+            try:
+                self._sapi_engine.stop()
+            except Exception:
+                pass
+
+
+def _cleanup_file(file_path: Path) -> None:
+    try:
+        if file_path.exists():
+            file_path.unlink()
+    except Exception:
+        pass

@@ -5,14 +5,20 @@ import os
 import uiautomation
 
 datas = []
+binaries = []
+hiddenimports = []
+
+for pkg in ['uiautomation', 'sv_ttk', 'edge_tts', 'winrt']:
+    tmp_ret = collect_all(pkg)
+    datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+datas += [('assets', 'assets')]
+
 uia_bin_dir = os.path.join(os.path.dirname(uiautomation.__file__), 'bin')
-binaries = [
+binaries += [
     (os.path.join(uia_bin_dir, 'UIAutomationClient_VC140_X64.dll'), 'uiautomation\\bin'),
     (os.path.join(uia_bin_dir, 'UIAutomationClient_VC140_X86.dll'), 'uiautomation\\bin')
 ]
-hiddenimports = ['uiautomation']
-tmp_ret = collect_all('uiautomation')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
@@ -44,6 +50,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
+    icon='assets\\icon.ico',
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

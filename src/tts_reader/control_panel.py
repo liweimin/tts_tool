@@ -1,26 +1,100 @@
 from __future__ import annotations
 
+import ctypes
 from pathlib import Path
+import subprocess
+import sys
 import tkinter as tk
 from tkinter import filedialog
 from tkinter import messagebox
 from tkinter import ttk
 from typing import Callable
-import subprocess
 
 import sv_ttk
 
 from .config import AppConfig, read_config, write_config, parse_hotkey, validate_config
 from .hotkey import is_hotkey_available
+from . import autostart
+
+
+VOICE_OPTIONS = [
+    ("zh-CN-XiaoxiaoNeural", "zh-CN-XiaoxiaoNeural (晓晓 - 自然亲切女声/推荐)"),
+    ("zh-CN-YunxiNeural", "zh-CN-YunxiNeural (云希 - 影视解说磁性男声/推荐)"),
+    ("zh-CN-YunjianNeural", "zh-CN-YunjianNeural (云健 - 稳重大气男声)"),
+    ("zh-CN-XiaoyiNeural", "zh-CN-XiaoyiNeural (晓伊 - 温柔抒情女声)"),
+    ("zh-CN-liaoning-XiaobeiNeural", "zh-CN-liaoning-XiaobeiNeural (小北 - 东北话女声)"),
+    ("zh-CN-shaanxi-XiaoniNeural", "zh-CN-shaanxi-XiaoniNeural (晓妮 - 陕西话女声)"),
+    ("zh-TW-HsiaoChenNeural", "zh-TW-HsiaoChenNeural (晓臻 - 台湾女声)"),
+    ("zh-HK-HiuMaanNeural", "zh-HK-HiuMaanNeural (晓曼 - 粤语女声)"),
+    ("en-US-JennyNeural", "en-US-JennyNeural (Jenny - 自然美式英语女声)"),
+    ("en-US-GuyNeural", "en-US-GuyNeural (Guy - 自然美式英语男声)"),
+]
+
+ENGINE_OPTIONS = [
+    ("edge", "Edge 神经网络语音 (在线超自然/推荐)"),
+    ("sapi5", "Windows 系统语音 (SAPI5 本地离线)"),
+]
+
+
+def _voice_id_to_label(voice_id: str) -> str:
+    cleaned = voice_id.strip()
+    for vid, label in VOICE_OPTIONS:
+        if vid.lower() == cleaned.lower():
+            return label
+    return cleaned or VOICE_OPTIONS[0][1]
+
+
+def _label_to_voice_id(label: str) -> str:
+    cleaned = label.strip()
+    for vid, opt_label in VOICE_OPTIONS:
+        if cleaned == opt_label:
+            return vid
+    return cleaned.split()[0] if cleaned else "zh-CN-XiaoxiaoNeural"
+
+
+def _engine_to_label(engine: str) -> str:
+    for eng, label in ENGINE_OPTIONS:
+        if eng == engine.strip().lower():
+            return label
+    return ENGINE_OPTIONS[0][1]
+
+
+def _label_to_engine(label: str) -> str:
+    for eng, opt_label in ENGINE_OPTIONS:
+        if label.strip() == opt_label:
+            return eng
+    return "edge"
+
+
+def _apply_window_icon(root: tk.Tk) -> None:
+    candidates = []
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        candidates.append(Path(sys._MEIPASS) / "assets" / "icon.ico")
+    candidates.append(Path(__file__).resolve().parent.parent.parent / "assets" / "icon.ico")
+    candidates.append(Path("assets") / "icon.ico")
+
+    for p in candidates:
+        if p.exists():
+            try:
+                root.iconbitmap(str(p.resolve()))
+                return
+            except Exception:
+                pass
 
 
 def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") -> int:
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("liweimin.tts_tool.reader")
+    except Exception:
+        pass
+
     initial_tab = "logs" if tab == "logs" else "settings"
 
     root = tk.Tk()
     root.title("TTS Reader 控制面板")
     root.geometry("860x720")
     root.minsize(800, 620)
+    _apply_window_icon(root)
 
     # Apply modern theme
     try:
@@ -49,8 +123,11 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
     max_chars_var = tk.StringVar(root)
     tts_rate_var = tk.StringVar(root)
     tts_voice_var = tk.StringVar(root)
+    tts_engine_var = tk.StringVar(root)
+    edge_voice_var = tk.StringVar(root)
     skip_empty_var = tk.BooleanVar(root)
     enable_translation_var = tk.BooleanVar(root)
+    autostart_var = tk.BooleanVar(root)
     status_var = tk.StringVar(root)
 
     log_path_var = tk.StringVar(root, str(log_path))
@@ -74,8 +151,11 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         max_chars_var.set(str(config.max_chars))
         tts_rate_var.set(str(config.tts_rate))
         tts_voice_var.set(config.tts_voice_contains)
+        tts_engine_var.set(_engine_to_label(config.tts_engine))
+        edge_voice_var.set(_voice_id_to_label(config.edge_voice))
         skip_empty_var.set(config.skip_if_no_text)
         enable_translation_var.set(config.enable_auto_translation)
+        autostart_var.set(config.autostart)
         set_status("已加载当前配置。")
 
     def parse_int(raw: str, field: str, minimum: int, maximum: int | None = None) -> int:
@@ -123,6 +203,9 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
             tts_voice_contains=tts_voice_var.get().strip(),
             skip_if_no_text=bool(skip_empty_var.get()),
             enable_auto_translation=bool(enable_translation_var.get()),
+            tts_engine=_label_to_engine(tts_engine_var.get()),
+            edge_voice=_label_to_voice_id(edge_voice_var.get()),
+            autostart=bool(autostart_var.get()),
         )
         validate_config(config)
         return config
@@ -147,6 +230,10 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
             return
 
         write_config(config, config_path)
+        try:
+            autostart.sync_autostart(config.autostart)
+        except Exception:
+            pass
         set_status("配置已保存，主程序会自动生效。")
         messagebox.showinfo("保存成功", "配置已保存并通知主程序自动生效。")
         load_config_to_form()
@@ -196,8 +283,11 @@ def run_control_panel(config_path: Path, log_path: Path, tab: str = "settings") 
         max_chars_var=max_chars_var,
         tts_rate_var=tts_rate_var,
         tts_voice_var=tts_voice_var,
+        tts_engine_var=tts_engine_var,
+        edge_voice_var=edge_voice_var,
         skip_empty_var=skip_empty_var,
         enable_translation_var=enable_translation_var,
+        autostart_var=autostart_var,
         on_choose_screenshot_save_dir=choose_screenshot_save_dir,
     )
     logs_text = _build_logs_tab(
@@ -237,8 +327,11 @@ def _build_settings_tab(
     max_chars_var: tk.StringVar,
     tts_rate_var: tk.StringVar,
     tts_voice_var: tk.StringVar,
+    tts_engine_var: tk.StringVar,
+    edge_voice_var: tk.StringVar,
     skip_empty_var: tk.BooleanVar,
     enable_translation_var: tk.BooleanVar,
+    autostart_var: tk.BooleanVar,
     on_choose_screenshot_save_dir: Callable[[], None],
 ) -> None:
     # 包装容器支持网格滚动或单纯的流式布局
@@ -281,20 +374,42 @@ def _build_settings_tab(
     tts_frame.pack(fill=tk.X, pady=(0, 15))
     tts_frame.columnconfigure(1, weight=1)
 
-    _add_labeled_entry(tts_frame, 0, "单次最大朗读字符数", max_chars_var)
-    _add_labeled_entry(tts_frame, 1, "语速 (默认参考~180)", tts_rate_var)
-    _add_labeled_entry(tts_frame, 2, "指定发音人 (包含关键词，如 Huihui)", tts_voice_var)
+    ttk.Label(tts_frame, text="语音合成引擎").grid(row=0, column=0, sticky=tk.W, pady=6, padx=(0, 15))
+    engine_combo = ttk.Combobox(
+        tts_frame,
+        textvariable=tts_engine_var,
+        values=[opt[1] for opt in ENGINE_OPTIONS],
+        state="readonly",
+    )
+    engine_combo.grid(row=0, column=1, sticky=tk.EW, pady=6)
+
+    ttk.Label(tts_frame, text="Edge 发音人 (在线高保真)").grid(row=1, column=0, sticky=tk.W, pady=6, padx=(0, 15))
+    voice_combo = ttk.Combobox(
+        tts_frame,
+        textvariable=edge_voice_var,
+        values=[opt[1] for opt in VOICE_OPTIONS],
+    )
+    voice_combo.grid(row=1, column=1, sticky=tk.EW, pady=6)
+
+    _add_labeled_entry(tts_frame, 2, "SAPI5 备用发音人 (关键词，如 Huihui)", tts_voice_var)
+    _add_labeled_entry(tts_frame, 3, "语速 (默认参考~180)", tts_rate_var)
+    _add_labeled_entry(tts_frame, 4, "单次最大朗读字符数", max_chars_var)
 
     ttk.Checkbutton(
         tts_frame,
         text="如果未获取到文本，不要语音提示失败",
         variable=skip_empty_var,
-    ).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
+    ).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(10, 0))
     ttk.Checkbutton(
         tts_frame,
         text="自动将提取到的英文字段翻译为中文后再朗读",
         variable=enable_translation_var,
-    ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+    ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+    ttk.Checkbutton(
+        tts_frame,
+        text="开机自动启动 TTS Reader (默认开启)",
+        variable=autostart_var,
+    ).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
 
 def _build_logs_tab(

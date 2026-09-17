@@ -56,6 +56,9 @@ class AppConfig:
     tts_voice_contains: str = ""
     skip_if_no_text: bool = False
     enable_auto_translation: bool = True
+    tts_engine: str = "edge"
+    edge_voice: str = "zh-CN-XiaoxiaoNeural"
+    autostart: bool = True
 
 
 def _parse_hotkey(hotkey: str) -> tuple[int, int]:
@@ -134,3 +137,6 @@ def validate_config(config: AppConfig) -> None:
     save_path = Path(save_dir).expanduser()
     if save_path.exists() and not save_path.is_dir():
         raise ValueError("Screenshot save directory must be a folder path.")
+
+    if config.tts_engine not in ("edge", "sapi5"):
+        raise ValueError(f"Invalid tts_engine '{config.tts_engine}'. Must be 'edge' or 'sapi5'.")

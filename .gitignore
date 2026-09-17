@@ -4,6 +4,9 @@ __pycache__/
 build/
 dist/
 *.spec
+!tts-reader-uia.spec
+test_*.mp3
+test_*.wav
 logs/
 config.json
 upx.exe

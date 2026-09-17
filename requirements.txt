@@ -8,3 +8,4 @@ winrt-Windows.Graphics.Imaging
 winrt-Windows.Storage.Streams
 winrt-Windows.Foundation
 winrt-Windows.Foundation.Collections
+edge-tts>=7.0.0

@@ -1,70 +1,115 @@
+from __future__ import annotations
+
+import json
 import logging
 import re
-import urllib.request
 import urllib.parse
-import json
+import urllib.request
 
 LOGGER = logging.getLogger(__name__)
+
 
 def is_mostly_english(text: str) -> bool:
     """
     判断文本是否主要为英文。
-    如果包含太多中文字符，则不认为主体是英文。
+    容忍 OCR 识别背景产生的个别噪点中文字符。
     """
     if not text:
         return False
-        
-    # 去除空白字符后的实际内容长度
-    stripped_text = "".join(text.split())
-    if not stripped_text:
+    stripped = "".join(text.split())
+    if not stripped:
         return False
-        
-    # 匹配所有的常用中文字符范围 \u4e00-\u9fa5
-    chinese_chars = re.findall(r'[\u4e00-\u9fa5]', text)
-    
-    # 假设如果中文字符占比超过总长度的 5% 或者 有超过 2 个中文字符，就不当做纯英文段落
-    # 这里的阈值可以根据实际使用体验微调
-    chinese_ratio = len(chinese_chars) / len(stripped_text)
-    
-    if len(chinese_chars) > 2 or chinese_ratio > 0.05:
+
+    english_chars = len(re.findall(r"[a-zA-Z]", text))
+    chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", text))
+
+    # 必须至少包含 3 个英文字母
+    if english_chars < 3:
         return False
-        
-    # 还需要确保文本里确实有英文字母，而不是全数字或标点
-    has_english_letters = bool(re.search(r'[a-zA-Z]', text))
-    return has_english_letters
+
+    # 若完全没有中文字符，则确定为英文
+    if chinese_chars == 0:
+        return True
+
+    # 容忍截图中少量噪点（如 OCR 产生的 1~4 个误识别汉字）
+    if chinese_chars <= 4 and english_chars >= 15:
+        return True
+
+    # 英文字符占比超过 75%
+    if english_chars / (chinese_chars + english_chars) >= 0.75:
+        return True
+
+    return False
 
 
-def translate_to_chinese(text: str, timeout: float = 3.0) -> str | None:
+def translate_to_chinese(text: str, timeout: float = 5.0) -> str | None:
     """
-    使用免费接口尝试把英文翻译成中文。
-    出错或超时时返回 None。
+    使用双通道免 Key 翻译接口将英文翻译为中文。
+    通道 1: Google Translate API (POST 提交，支持长段落)
+    通道 2: MyMemory Translation API (自动备用容灾)
     """
     if not text or not text.strip():
         return None
-        
-    # 使用 Google Translate 的免费公开接口 (客户端端点)
-    # 虽然有时候会有频控，但在划词翻译的低频场景下通常足够稳定且不需要 Key。
+
+    # 通道 1: Google Translate
+    res = _translate_google(text, timeout=timeout)
+    if res:
+        return res
+
+    # 通道 2: MyMemory 备用通道
+    res = _translate_mymemory(text, timeout=timeout)
+    if res:
+        return res
+
+    return None
+
+
+def _translate_google(text: str, timeout: float = 5.0) -> str | None:
     try:
-        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=zh-CN&dt=t&q=" + urllib.parse.quote(text)
-        
+        url = "https://translate.googleapis.com/translate_a/single"
+        data = urllib.parse.urlencode({
+            "client": "gtx",
+            "sl": "auto",
+            "tl": "zh-CN",
+            "dt": "t",
+            "q": text,
+        }).encode("utf-8")
+
         req = urllib.request.Request(
-            url, 
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            url,
+            data=data,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
         )
-        
+
         with urllib.request.urlopen(req, timeout=timeout) as response:
-            result = json.loads(response.read().decode('utf-8'))
-            
-            # Google Translate API 返回的格式形如：
-            # [[[翻译结果片段1, 原文片段1, ...], [翻译结果片段2, ...]], ...]
+            result = json.loads(response.read().decode("utf-8"))
             if result and isinstance(result, list) and len(result) > 0:
-                translated_parts = [part[0] for part in result[0] if part[0]]
-                translated_text = "".join(translated_parts)
-                LOGGER.info("Successfully translated text to Chinese (%d chars -> %d chars)", len(text), len(translated_text))
-                return translated_text
-                
+                parts = [part[0] for part in result[0] if part and part[0]]
+                translated = "".join(parts).strip()
+                if translated:
+                    LOGGER.info("Google Translate success (%d chars -> %d chars)", len(text), len(translated))
+                    return translated
     except Exception as exc:
-        LOGGER.warning("Translation failed: %s", exc)
-        return None
-        
+        LOGGER.warning("Google translation failed (%s): %s", type(exc).__name__, exc)
+    return None
+
+
+def _translate_mymemory(text: str, timeout: float = 5.0) -> str | None:
+    try:
+        query_text = text[:800]
+        url = f"https://api.mymemory.translated.net/get?q={urllib.parse.quote(query_text)}&langpair=en|zh-CN"
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+        )
+
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            result = json.loads(response.read().decode("utf-8"))
+            if result.get("responseStatus") == 200:
+                translated = result.get("responseData", {}).get("translatedText", "").strip()
+                if translated and not translated.startswith("MYMEMORY WARNING"):
+                    LOGGER.info("MyMemory Translate fallback success (%d chars -> %d chars)", len(text), len(translated))
+                    return translated
+    except Exception as exc:
+        LOGGER.warning("MyMemory translation failed (%s): %s", type(exc).__name__, exc)
     return None

@@ -20,6 +20,7 @@ from .selection import get_selected_text
 from .speaker import Speaker
 from .tray import TrayIcon
 from . import translator
+from . import autostart
 
 
 LOGGER = logging.getLogger(__name__)
@@ -41,7 +42,12 @@ class ReaderApp:
         text_modifiers, text_vk = parse_hotkey(config.hotkey)
         screenshot_modifiers, screenshot_vk = parse_hotkey(config.screenshot_hotkey)
         save_screenshot_modifiers, save_screenshot_vk = parse_hotkey(config.save_screenshot_hotkey)
-        self._speaker = Speaker(rate=config.tts_rate, voice_contains=config.tts_voice_contains)
+        self._speaker = Speaker(
+            rate=config.tts_rate,
+            voice_contains=config.tts_voice_contains,
+            engine=config.tts_engine,
+            edge_voice=config.edge_voice,
+        )
         self._screen_ocr = ScreenOcrReader()
         self._text_hotkey = GlobalHotkeyListener(
             modifiers=text_modifiers,
@@ -81,6 +87,10 @@ class ReaderApp:
         self._screenshot_hotkey.start()
         self._save_screenshot_hotkey.start()
         self._tray.start()
+        try:
+            autostart.sync_autostart(self._config.autostart)
+        except Exception:
+            LOGGER.exception("Failed to sync autostart setting on launch.")
         LOGGER.info(
             "App started. Use '%s' for selected text, '%s' for screenshot OCR, '%s' for saving screenshot.",
             self._config.hotkey,
@@ -345,6 +355,8 @@ class ReaderApp:
             speaker_changed = (
                 new_config.tts_rate != old_config.tts_rate
                 or new_config.tts_voice_contains != old_config.tts_voice_contains
+                or new_config.tts_engine != old_config.tts_engine
+                or new_config.edge_voice != old_config.edge_voice
             )
 
             started_listeners: list[GlobalHotkeyListener] = []
@@ -399,7 +411,14 @@ class ReaderApp:
                     old_speaker.update_settings(
                         rate=new_config.tts_rate,
                         voice_contains=new_config.tts_voice_contains,
+                        engine=new_config.tts_engine,
+                        edge_voice=new_config.edge_voice,
                     )
+                if old_config.autostart != new_config.autostart:
+                    try:
+                        autostart.sync_autostart(new_config.autostart)
+                    except Exception:
+                        LOGGER.exception("Failed to sync autostart setting on config reload.")
                 self._config = new_config
                 if persist:
                     write_config(new_config, self._config_path)

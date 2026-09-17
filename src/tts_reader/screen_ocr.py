@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass
@@ -177,11 +178,66 @@ class ScreenOcrReader:
                 return None
                 
             lines = [line.text for line in result.lines]
-            return "\n".join(lines).strip()
+            return clean_ocr_text(lines)
             
         except Exception:
             LOGGER.exception("Error during Windows Native OCR async execution.")
             return None
+
+
+def clean_ocr_text(lines: list[str]) -> str:
+    """Clean and reassemble raw OCR lines into coherent, fluent speech-friendly text."""
+    if not lines:
+        return ""
+
+    raw_text = "\n".join(lines).strip()
+    if not raw_text:
+        return ""
+
+    # 1. Normalize line breaks
+    text = raw_text.replace("\r\n", "\n").replace("\r", "\n")
+
+    # 2. Fix hyphenated word breaks at end of line: 'auto-\nmatic' -> 'automatic'
+    text = re.sub(r"([a-zA-Z]+)-\s*\n\s*([a-zA-Z]+)", r"\1\2", text)
+
+    # 3. For Chinese / CJK: remove spaces between CJK characters and punctuation.
+    # Windows Media OCR inserts a space between every Chinese word/character by default,
+    # causing TTS engines to read one character at a time unnaturally.
+    cjk_char = r"[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff01-\uff5e]"
+    prev = None
+    while prev != text:
+        prev = text
+        text = re.sub(rf"({cjk_char})\s+({cjk_char})", r"\1\2", text)
+
+    # 4. Merge broken paragraph lines intelligently:
+    # If a line does not end with sentence-ending punctuation, merge it into the next line.
+    raw_lines = text.split("\n")
+    merged_lines: list[str] = []
+    for line in raw_lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        if merged_lines:
+            prev_line = merged_lines[-1]
+            # If prev_line ends with CJK non-punctuation and current starts with CJK, merge directly
+            if re.search(r"[\u4e00-\u9fff\u3400-\u4dbf]$", prev_line) and re.search(r"^[\u4e00-\u9fff\u3400-\u4dbf]", line_str):
+                merged_lines[-1] = prev_line + line_str
+                continue
+            # If both lines are English without sentence break, merge with a single space
+            elif re.search(r"[a-zA-Z0-9,]$", prev_line) and re.search(r"^[a-zA-Z0-9]", line_str):
+                merged_lines[-1] = prev_line + " " + line_str
+                continue
+        merged_lines.append(line_str)
+
+    text = "\n".join(merged_lines)
+
+    # 5. Fix isolated single English letters separated by spaces (OCR artifact from CJK engine): 't h i s' -> 'this'
+    def _merge_single_letters(m: re.Match) -> str:
+        return m.group(0).replace(" ", "")
+
+    text = re.sub(r"\b(?:[a-zA-Z]\s+){2,}[a-zA-Z]\b", _merge_single_letters, text)
+
+    return text.strip()
 
 
 def _elapsed_ms(started_at: float) -> int:

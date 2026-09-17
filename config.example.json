@@ -9,5 +9,8 @@
   "tts_rate": 180,
   "tts_voice_contains": "",
   "skip_if_no_text": false,
-  "enable_auto_translation": true
+  "enable_auto_translation": true,
+  "tts_engine": "edge",
+  "edge_voice": "zh-CN-XiaoxiaoNeural",
+  "autostart": true
 }

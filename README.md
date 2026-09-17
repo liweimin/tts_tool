@@ -10,7 +10,15 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.5.1` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.6.0` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.6.0 新增（Edge 神经网络语音与开机自启大版本）
+- **Edge 神经网络语音**：接入微软超自然神经网络语音引擎，默认采用高拟真女声“微软晓晓”，告别机械电音；同时支持云希（解说男声）、云健、晓伊、方言与美音等数十种高质量声音，并配有风格与场景特色说明。
+- **离线无缝平滑降级**：具备智能容灾能力，无网络或网络波动时自动透明降级为系统本地 SAPI5 离线发音，保证 100% 可用。
+- **开机自动启动**：支持开机静默启动并在托盘常驻，默认开启，可随时在控制面板一键开关。
+- **中文截图 OCR 逐字卡顿修复**：彻底消除 Windows OCR 识别中文在字符间注入多余空格引起的断续单字朗读问题，朗读连贯自然。
+- **英文截图 OCR 翻译稳定性加固**：网络翻译升级为高抗限流协议并接入 MyMemory 双通道备用，优化 OCR 杂字符容差，避免漏翻。
+- **专属高分图标与任务栏标识**：托盘与设置面板全部换上专属高分图标，并通过 Windows AppUserModelID 保证任务栏独立图标清晰呈现。
 
 ## v0.5.1 修复
 - **截图保存裁剪修复**：修复了在 Windows 显示缩放开启时，框选完整但保存结果缺失右侧或下侧区域的问题。
@@ -94,7 +102,10 @@ python src\main.py
   "tts_rate": 180,
   "tts_voice_contains": "",
   "skip_if_no_text": false,
-  "enable_auto_translation": true
+  "enable_auto_translation": true,
+  "tts_engine": "edge",
+  "edge_voice": "zh-CN-XiaoxiaoNeural",
+  "autostart": true
 }
 ```
 
@@ -106,15 +117,18 @@ python src\main.py
 - `copy_retry_count`: 复制链路重试次数（建议 2）
 - `max_chars`: 单次朗读最大字符数
 - `tts_rate`: 语速
-- `tts_voice_contains`: 按关键词匹配语音（可留空）
+- `tts_voice_contains`: 本地 SAPI5 按关键词匹配语音（可留空）
 - `skip_if_no_text`: `false` 时取词失败会语音提示“未获取到选中文本”
 - `enable_auto_translation`: 是否开启智能转译。截取大段英文时，自动网络翻译为中文朗读
+- `tts_engine`: 发音引擎，可选 `"edge"` (推荐) 或 `"sapi5"`
+- `edge_voice`: 微软 Edge 神经网络声音 ID（默认 `"zh-CN-XiaoxiaoNeural"`）
+- `autostart`: 是否开机自动启动并在系统托盘常驻（默认 `true`）
 
 ## 控制面板
 
-- 托盘菜单包含 `Read Again`、`Screenshot OCR`、`Settings`、`Logs`
-- `Settings` 可修改并即时生效
-- `Settings` 可配置截图保存快捷键和保存目录
+- 托盘菜单支持中文，包含 `朗读选中文本 (Alt+Q)`、`截图 OCR 朗读 (Alt+R)`、`系统设置`、`运行日志`、`退出`，双击托盘图标可直达设置。
+- `系统设置` 可修改热键、发音引擎、音色风格、开机自启等并即时生效。
+- `系统设置` 可配置截图保存快捷键和保存目录。
 - 保存热键时会检查是否和系统/其他软件冲突，冲突会弹窗提示
 - `Logs` 页可直接复制日志文本，便于反馈问题
 
