@@ -11,8 +11,8 @@ LOGGER = logging.getLogger(__name__)
 
 def is_mostly_english(text: str) -> bool:
     """
-    判断文本是否主要为英文。
-    容忍 OCR 识别背景产生的个别噪点中文字符。
+    判断文本是否包含待翻译的英文内容（兼容纯英文与中英混合段落）。
+    若为纯中文或仅含零星孤立单词/代号，返回 False 以保持 0 延迟本地直接朗读。
     """
     if not text:
         return False
@@ -27,16 +27,21 @@ def is_mostly_english(text: str) -> bool:
     if english_chars < 3:
         return False
 
-    # 若完全没有中文字符，则确定为英文
+    # 1. 纯英文（完全无中文字符）
     if chinese_chars == 0:
         return True
 
-    # 容忍截图中少量噪点（如 OCR 产生的 1~4 个误识别汉字）
-    if chinese_chars <= 4 and english_chars >= 15:
+    # 2. 截图中少量 OCR 噪点汉字
+    if chinese_chars <= 4 and english_chars >= 10:
         return True
 
-    # 英文字符占比超过 75%
-    if english_chars / (chinese_chars + english_chars) >= 0.75:
+    # 3. 包含连贯的英文句式/短语（至少 2 个连续英文单词，如 'The weather is nice', 'Please let me know'）
+    has_english_phrase = bool(re.search(r"\b[a-zA-Z]{2,}(?:\s+[a-zA-Z]+)+\b", text))
+    if has_english_phrase and english_chars >= 8:
+        return True
+
+    # 4. 英文字符占显著优势（例如 60% 以上且英文总数达到 15）
+    if english_chars / (chinese_chars + english_chars) >= 0.6 and english_chars >= 15:
         return True
 
     return False
@@ -45,7 +50,7 @@ def is_mostly_english(text: str) -> bool:
 def translate_to_chinese(text: str, timeout: float = 5.0) -> str | None:
     """
     使用双通道免 Key 翻译接口将英文翻译为中文。
-    通道 1: Google Translate API (POST 提交，支持长段落)
+    通道 1: Google Translate API (POST 提交，支持长段落与中英混合文本)
     通道 2: MyMemory Translation API (自动备用容灾)
     """
     if not text or not text.strip():
@@ -67,9 +72,14 @@ def translate_to_chinese(text: str, timeout: float = 5.0) -> str | None:
 def _translate_google(text: str, timeout: float = 5.0) -> str | None:
     try:
         url = "https://translate.googleapis.com/translate_a/single"
+        # 若文本中包含中文字符，将 sl 明确指定为 en，避免 Google auto 检测误判整篇为 zh-CN 导致英文不翻译；
+        # 若为纯外文（无中文），使用 auto 自动兼容各种源语言。
+        has_chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
+        sl = "en" if has_chinese else "auto"
+
         data = urllib.parse.urlencode({
             "client": "gtx",
-            "sl": "auto",
+            "sl": sl,
             "tl": "zh-CN",
             "dt": "t",
             "q": text,
