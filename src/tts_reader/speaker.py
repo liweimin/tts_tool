@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+from datetime import timezone as _tz
+from email.utils import parsedate_to_datetime as _parsedate_to_datetime
 import logging
 import os
 from pathlib import Path
@@ -15,10 +17,46 @@ except ImportError:
     pyttsx3 = None
 import pythoncom
 import edge_tts
+import edge_tts.communicate as _edge_communicate
+import edge_tts.constants as _edge_constants
+from edge_tts.drm import DRM as _EdgeDRM
 
 
 _LOGGER = logging.getLogger(__name__)
 _WINMM = ctypes.windll.winmm
+
+_EDGE_TOKEN = getattr(_edge_constants, "TRUSTED_CLIENT_TOKEN", "6A5AA1D4EAFF4E9FB37E23D68491D6F4")
+_EDGE_WSS_URL_PRIMARY = (
+    "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+    f"?Ocp-Apim-Subscription-Key={_EDGE_TOKEN}"
+)
+_EDGE_WSS_URL_LEGACY = getattr(
+    _edge_constants,
+    "WSS_URL",
+    f"wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1?TrustedClientToken={_EDGE_TOKEN}",
+)
+
+
+def _parse_rfc2616_date_safe(date: str) -> float | None:
+    """Locale-independent RFC 2616 HTTP Date parser for Edge-TTS clock skew handling."""
+    try:
+        parsed = _parsedate_to_datetime(date)
+    except (TypeError, ValueError, IndexError):
+        return None
+    if parsed is None:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=_tz.utc)
+    return parsed.timestamp()
+
+
+def _set_edge_wss_url(url: str) -> None:
+    _edge_constants.WSS_URL = url
+    _edge_communicate.WSS_URL = url
+
+
+_EdgeDRM.parse_rfc2616_date = staticmethod(_parse_rfc2616_date_safe)
+_set_edge_wss_url(_EDGE_WSS_URL_PRIMARY)
 
 
 def _format_edge_rate(rate: int) -> str:
@@ -339,14 +377,39 @@ class Speaker:
     async def _async_edge_synthesize(
         self, text: str, voice: str, rate: str, output_file: Path, gen: int
     ) -> bool:
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        with open(output_file, "wb") as f:
-            async for chunk in communicate.stream():
-                if not self._is_gen_active(gen):
-                    return False
-                if chunk["type"] == "audio":
-                    f.write(chunk["data"])
-        return output_file.exists() and output_file.stat().st_size > 0
+        endpoints = [_EDGE_WSS_URL_PRIMARY, _EDGE_WSS_URL_LEGACY]
+        last_exc: Exception | None = None
+
+        for idx, url in enumerate(endpoints):
+            if not self._is_gen_active(gen):
+                return False
+            _set_edge_wss_url(url)
+            try:
+                communicate = edge_tts.Communicate(text, voice, rate=rate)
+                with open(output_file, "wb") as f:
+                    async for chunk in communicate.stream():
+                        if not self._is_gen_active(gen):
+                            return False
+                        if chunk["type"] == "audio":
+                            f.write(chunk["data"])
+                if output_file.exists() and output_file.stat().st_size > 0:
+                    return True
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                last_exc = exc
+                _cleanup_file(output_file)
+                if idx == 0 and self._is_gen_active(gen):
+                    _LOGGER.warning(
+                        "Primary Edge-TTS endpoint failed (%s: %s), retrying legacy endpoint...",
+                        type(exc).__name__,
+                        exc,
+                    )
+
+        _set_edge_wss_url(_EDGE_WSS_URL_PRIMARY)
+        if last_exc is not None:
+            raise last_exc
+        return False
 
     def _play_audio_mci(self, audio_path: Path, gen: int) -> bool:
         if not self._is_gen_active(gen):

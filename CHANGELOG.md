@@ -4,6 +4,14 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-13
+
+### Fixed
+- **修复微软旧版 Edge-TTS 域名停用导致的 403 报错与机器声回退问题**：
+  - 微软于 2026年10月12日~13日关闭了旧版 `speech.platform.bing.com` 合成接口（返回 HTTP 403），导致在线语音失败并自动触发 SAPI5 离线机器音降级。
+  - 现已将默认合成端点切换至微软最新域名 `wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1`（采用 `Ocp-Apim-Subscription-Key` 鉴权），并保留双端点自动容灾重试，彻底恢复“微软晓晓”等超自然神经网络语音。
+  - 修复 `edge-tts` 在非英文系统 Locale 下解析服务器 `Date` 响应头可能失败的问题（改用 `email.utils.parsedate_to_datetime`）。
+
 ## [0.6.1] - 2026-09-22
 
 ### Fixed
