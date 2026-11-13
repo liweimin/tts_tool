@@ -4,6 +4,25 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-13
+
+### Fixed
+- **修复开机自启动时报 `PermissionError: [Errno 13] Permission denied: 'config.json'` 弹窗崩溃问题**：
+  - 根因：Windows 开机通过注册表 `Run` 启动应用时，默认当前工作目录为 `C:\Windows\System32`。原有代码中 `DEFAULT_CONFIG_PATH = Path("config.json")` 使用相对路径，导致程序在开机自启时尝试在系统 `System32` 目录创建或写入 `config.json`，因普通用户无写入权限触发未捕获异常弹窗。
+  - 修复：
+    - `config.py` 中重构配置路径解析为绝对路径 `(get_app_dir() / "config.json").resolve()`；若程序目录不可写（如受保护目录），平滑降级至 `%LOCALAPPDATA%\tts-reader\config.json`，杜绝任何相对路径指向 `System32` 的风险。
+    - `cli.py` 程序入口处增加自动修正当前工作目录机制（`os.chdir(get_app_dir())`），彻底保证后续所有组件运行于正确的程序目录上下文。
+- **修复 Windows 11 及版本升级后开机自启动失效问题**：
+  - 根因：
+    - `autostart.py` 原逻辑仅检查注册表项是否存在，未比对注册路径与当前 exe 路径。当用户下载新版本或移动 exe 位置后，注册表仍指向失效的旧路径，`sync_autostart` 误判“已开启”从而不会更新注册表，导致系统启动时静默失败。
+    - Win11 的任务管理器“启动应用”状态记录于 `HKCU\...\StartupApproved\Run`，若此前被系统或用户禁用过，普通注册表 `Run` 项会被 Win11 忽略。
+    - 部分办公电脑组策略禁止写入注册表 Run 项，静默抛错导致自启写入失败。
+  - 修复：
+    - `is_autostart_enabled()` 增加执行目标与路径一致性比对，路径不匹配时由 `sync_autostart()` 自动修正更新为当前运行 exe 的最新路径。
+    - 启用自启动时自动清理 Windows 11 `StartupApproved\Run` 中的禁用残留状态。
+    - 增加 Windows 用户自启动文件夹（`shell:startup` 快捷方式）双重兜底保障机制：若公司策略禁止修改注册表，自动 fallback 在启动文件夹生成指定工作目录的快捷方式。
+
+
 ## [0.6.2] - 2026-10-13
 
 ### Fixed

@@ -9,7 +9,7 @@ from pathlib import Path
 import signal
 
 from .app import ReaderApp
-from .config import DEFAULT_CONFIG_PATH, read_config, write_default_config_if_missing
+from .config import DEFAULT_CONFIG_PATH, get_app_dir, read_config, write_default_config_if_missing
 from .control_panel import run_control_panel
 from .logging_setup import setup_logging
 
@@ -17,10 +17,17 @@ _INSTANCE_LOCK_FILE = None
 
 
 def main() -> int:
+    try:
+        app_dir = get_app_dir()
+        if app_dir.exists():
+            os.chdir(app_dir)
+    except Exception:
+        pass
+
     _enable_dpi_awareness()
     args = _parse_args()
+    config_path = Path(args.config_path).resolve() if args.config_path else DEFAULT_CONFIG_PATH
     if args.control_panel:
-        config_path = Path(args.config_path) if args.config_path else DEFAULT_CONFIG_PATH
         log_path = Path(args.log_path) if args.log_path else setup_logging()
         return run_control_panel(config_path=config_path, log_path=log_path, tab=args.tab)
 
@@ -32,8 +39,8 @@ def main() -> int:
         logger.error("Another instance is already running. Exit this instance.")
         return 2
 
-    write_default_config_if_missing()
-    config = read_config()
+    write_default_config_if_missing(config_path)
+    config = read_config(config_path)
     logger.info(
         "Loaded config: hotkey=%s screenshot_hotkey=%s save_screenshot_hotkey=%s screenshot_save_dir=%s max_chars=%s copy_delay_ms=%s copy_retry_count=%s",
         config.hotkey,
@@ -50,7 +57,7 @@ def main() -> int:
             "Current hotkey '%s' is active. If conflicts happen, change it in Settings.",
             config.hotkey,
         )
-    app = ReaderApp(config=config, log_file=log_file)
+    app = ReaderApp(config=config, log_file=log_file, config_path=config_path)
 
     def _signal_handler(_signum: int, _frame: object) -> None:
         app.request_stop()

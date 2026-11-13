@@ -10,7 +10,11 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.6.2` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.6.3` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.6.3 修复（开机自启权限与跨设备自启兼容性修复）
+- **修复开机自启报 `Permission denied: 'config.json'` 致命弹窗**：Windows 开机以 `System32` 为工作目录拉起应用时，相对路径导致在系统目录写入配置文件失败。现已全面升级为绝对路径解析，并在进程启动最前端校正工作目录，杜绝系统目录写入冲突。
+- **修复 Windows 11 及升级后自启动失效**：加入注册表命令与当前路径精确一致性校验，换目录或升级版本时自启项自动更新；重置 Win11 `StartupApproved` 禁用标记，并加入 Windows 自启动文件夹快捷方式兜底机制，保障企业环境与限制策略下的自启可靠性。
 
 ## v0.6.2 修复（微软 Edge 语音新接口适配）
 - **恢复微软晓晓超自然语音（修复 403 降级机器音问题）**：针对 2026年10月12日~13日微软停用旧版 `speech.platform.bing.com` 接口导致的 `403` 报错，已热迁移至微软最新 `api.msedgeservices.com` 语音合成端点，并加固跨语言环境下的时间校准解析。

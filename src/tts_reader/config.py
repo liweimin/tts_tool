@@ -4,36 +4,67 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+import sys
 from typing import Any
 
-import win32con
+try:
+    import win32con
+    _MOD_ALT = win32con.MOD_ALT
+    _MOD_CONTROL = win32con.MOD_CONTROL
+    _MOD_SHIFT = win32con.MOD_SHIFT
+    _MOD_WIN = win32con.MOD_WIN
+    _VK_F_MAP = {f"f{i}": getattr(win32con, f"VK_F{i}") for i in range(1, 13)}
+except ImportError:
+    _MOD_ALT = 0x0001
+    _MOD_CONTROL = 0x0002
+    _MOD_SHIFT = 0x0004
+    _MOD_WIN = 0x0008
+    _VK_F_MAP = {f"f{i}": 0x6F + i for i in range(1, 13)}
 
 
-DEFAULT_CONFIG_PATH = Path("config.json")
+def get_app_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parents[2]
+
+
+def get_default_config_path() -> Path:
+    app_dir = get_app_dir()
+    app_config = app_dir / "config.json"
+    if app_config.exists():
+        return app_config.resolve()
+
+    # Prefer app_dir (portable mode) if it is writable
+    try:
+        test_file = app_dir / f".perm_test_{os.getpid()}"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+        return app_config.resolve()
+    except (OSError, PermissionError):
+        pass
+
+    # Fallback to %LOCALAPPDATA%\tts-reader\config.json
+    local_app_data = os.getenv("LOCALAPPDATA")
+    base_dir = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+    app_data_dir = base_dir / "tts-reader"
+    app_data_dir.mkdir(parents=True, exist_ok=True)
+    return (app_data_dir / "config.json").resolve()
+
+
+DEFAULT_CONFIG_PATH = get_default_config_path()
 
 
 _MODIFIER_MAP = {
-    "alt": win32con.MOD_ALT,
-    "ctrl": win32con.MOD_CONTROL,
-    "shift": win32con.MOD_SHIFT,
-    "win": win32con.MOD_WIN,
+    "alt": _MOD_ALT,
+    "ctrl": _MOD_CONTROL,
+    "shift": _MOD_SHIFT,
+    "win": _MOD_WIN,
 }
 
 _VK_MAP = {
     **{chr(letter).lower(): ord(chr(letter)) for letter in range(ord("A"), ord("Z") + 1)},
     **{str(num): ord(str(num)) for num in range(10)},
-    "f1": win32con.VK_F1,
-    "f2": win32con.VK_F2,
-    "f3": win32con.VK_F3,
-    "f4": win32con.VK_F4,
-    "f5": win32con.VK_F5,
-    "f6": win32con.VK_F6,
-    "f7": win32con.VK_F7,
-    "f8": win32con.VK_F8,
-    "f9": win32con.VK_F9,
-    "f10": win32con.VK_F10,
-    "f11": win32con.VK_F11,
-    "f12": win32con.VK_F12,
+    **_VK_F_MAP,
 }
 
 
@@ -78,13 +109,14 @@ def _parse_hotkey(hotkey: str) -> tuple[int, int]:
     return modifiers, _VK_MAP[key_name]
 
 
-def read_config(config_path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
-    if not config_path.exists():
+def read_config(config_path: Path | None = None) -> AppConfig:
+    resolved_path = config_path if config_path is not None else DEFAULT_CONFIG_PATH
+    if not resolved_path.exists():
         config = AppConfig()
         validate_config(config)
         return config
 
-    raw = json.loads(config_path.read_text(encoding="utf-8"))
+    raw = json.loads(resolved_path.read_text(encoding="utf-8"))
     data: dict[str, Any] = {}
     for field_name in AppConfig.__dataclass_fields__.keys():
         if field_name in raw:
@@ -94,17 +126,21 @@ def read_config(config_path: Path = DEFAULT_CONFIG_PATH) -> AppConfig:
     return config
 
 
-def write_default_config_if_missing(config_path: Path = DEFAULT_CONFIG_PATH) -> None:
-    if config_path.exists():
+def write_default_config_if_missing(config_path: Path | None = None) -> None:
+    resolved_path = config_path if config_path is not None else DEFAULT_CONFIG_PATH
+    if resolved_path.exists():
         return
-    config_path.write_text(
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
         json.dumps(AppConfig().__dict__, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-def write_config(config: AppConfig, config_path: Path = DEFAULT_CONFIG_PATH) -> None:
-    config_path.write_text(
+def write_config(config: AppConfig, config_path: Path | None = None) -> None:
+    resolved_path = config_path if config_path is not None else DEFAULT_CONFIG_PATH
+    resolved_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_path.write_text(
         json.dumps(config.__dict__, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
