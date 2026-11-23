@@ -11,8 +11,9 @@ LOGGER = logging.getLogger(__name__)
 
 def is_mostly_english(text: str) -> bool:
     """
-    判断文本是否包含待翻译的英文内容（兼容纯英文与中英混合段落）。
-    若为纯中文或仅含零星孤立单词/代号，返回 False 以保持 0 延迟本地直接朗读。
+    判断文本是否为主体待翻译的英文内容（纯英文或以英文为主的混合段落）。
+    若为主体中文（包括夹杂技术术语、产品名如 Tabbit Browser、Agent 等的中文文章），
+    返回 False，直接由 TTS 引擎进行高质量中英自然混读，避免误翻译篡改中文。
     """
     if not text:
         return False
@@ -31,18 +32,18 @@ def is_mostly_english(text: str) -> bool:
     if chinese_chars == 0:
         return True
 
-    # 2. 截图中少量 OCR 噪点汉字
+    # 2. 截图中极少量 OCR 噪点汉字（例如边缘包含 1~4 个零星汉字）
     if chinese_chars <= 4 and english_chars >= 10:
         return True
 
-    # 3. 包含连贯的英文句式/短语（至少 2 个连续英文单词，如 'The weather is nice', 'Please let me know'）
-    has_english_phrase = bool(re.search(r"\b[a-zA-Z]{2,}(?:\s+[a-zA-Z]+)+\b", text))
-    if has_english_phrase and english_chars >= 8:
-        return True
-
-    # 4. 英文字符占显著优势（例如 60% 以上且英文总数达到 15）
-    if english_chars / (chinese_chars + english_chars) >= 0.6 and english_chars >= 15:
-        return True
+    # 3. 英文为主体的大段混合文本（如英文正文邮件夹带署名）：
+    # 限制汉字不超过 15 个，英文占据显著优势（例如英文总数达到 40 且占比 >= 75%），
+    # 并包含连贯英文短语/句式。若汉字超过 15 个，说明已具有完整中文语境，坚决不进行整篇翻译。
+    if chinese_chars <= 15 and english_chars >= 40:
+        has_english_phrase = bool(re.search(r"\b[a-zA-Z]{2,}(?:\s+[a-zA-Z]+)+\b", text))
+        ratio = english_chars / (chinese_chars + english_chars)
+        if has_english_phrase and ratio >= 0.75:
+            return True
 
     return False
 
@@ -72,14 +73,11 @@ def translate_to_chinese(text: str, timeout: float = 5.0) -> str | None:
 def _translate_google(text: str, timeout: float = 5.0) -> str | None:
     try:
         url = "https://translate.googleapis.com/translate_a/single"
-        # 若文本中包含中文字符，将 sl 明确指定为 en，避免 Google auto 检测误判整篇为 zh-CN 导致英文不翻译；
-        # 若为纯外文（无中文），使用 auto 自动兼容各种源语言。
-        has_chinese = bool(re.search(r"[\u4e00-\u9fff]", text))
-        sl = "en" if has_chinese else "auto"
-
+        # 始终使用 sl=auto 让 Google 自动精准检测源语言。
+        # 严禁在含中文时硬编码 sl=en，否则会导致 Google 模型在英文解码下将中文汉字幻觉乱翻（例如将“评测”翻成“体育”）。
         data = urllib.parse.urlencode({
             "client": "gtx",
-            "sl": sl,
+            "sl": "auto",
             "tl": "zh-CN",
             "dt": "t",
             "q": text,

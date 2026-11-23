@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-23
+
+### Fixed
+- **修复中文技术文章夹杂英文专有名词被误翻译成错词问题（如“评测”被读成“体育”）**：
+  - 优化文本语言检测算法 `is_mostly_english`：移除“只要包含连续英文短语且字母>=8即判定为英文”的激进规则，强化中文主体保护机制。当文本中汉字占主导地位（如中文文章中包含 `Tabbit Browser`、`General Agent System`、`Visual Studio` 等专有名词）时，直接保留原文由 Edge-TTS 进行自然流畅的中英混读，杜绝误触发翻译导致原文被篡改。
+  - 修复 Google 翻译源语言参数陷阱：移除对包含中文文本强制指定 `sl="en"` 的逻辑，统一采用 `sl="auto"` 自动检测，彻底消除模型在英文解码下将中文汉字错位幻觉翻译（如将“评测”误翻成“体育”）的问题。
+
 ## [0.6.3] - 2026-11-13
 
 ### Fixed

@@ -10,7 +10,10 @@ Win10/Win11 桌面常驻工具。
 
 - 稳定版本从 GitHub Releases 下载：
   - `https://github.com/liweimin/tts_tool/releases`
-- `v0.6.3` 推荐下载资产：`tts-reader-uia.exe`
+- `v0.6.4` 推荐下载资产：`tts-reader-uia.exe`
+
+## v0.6.4 修复（中文技术文章夹杂英文专有名词误翻译问题）
+- **修复中文夹杂英文专有名词被误翻译错乱问题（如“评测”读成“体育”）**：重构语言检测规则，避免中文技术文章因包含 `Tabbit Browser`、`General Agent System`、`Visual Studio` 等连贯英文专有名词而误触发翻译；移除源语言强制声明 `sl="en"`，确保中文直接交由 Edge-TTS 自然混读，不再被模型幻觉篡改。
 
 ## v0.6.3 修复（开机自启权限与跨设备自启兼容性修复）
 - **修复开机自启报 `Permission denied: 'config.json'` 致命弹窗**：Windows 开机以 `System32` 为工作目录拉起应用时，相对路径导致在系统目录写入配置文件失败。现已全面升级为绝对路径解析，并在进程启动最前端校正工作目录，杜绝系统目录写入冲突。
